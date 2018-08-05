@@ -2159,7 +2159,7 @@ u8 readByte(u16 address, MMU *mmu) {
         prevState->cpu = *cpu;
 
         if (mmu->hasRAM) {
-        //    copyMemory(mmu->cartRAM, prevState->mmu.cartRAM, prevState->mmu.cartRAMSize);
+            copyMemory(mmu->cartRAM, prevState->mmu.cartRAM, prevState->mmu.cartRAMSize);
         }
         prevState->mmu = *mmu;
 
@@ -2696,7 +2696,7 @@ u8 readByte(u16 address, MMU *mmu) {
         if (gbDebug->numBreakpoints > 0 && gbDebug->isEnabled ) {
             
             
-            if (gbDebug->shouldRecordDebugState) {
+            if (gbDebug->isRecordDebugStateEnabled && gbDebug->numBreakpoints > 0) {
                 recordDebugState(cpu, mmu, gbDebug);
             }           
             CPU tmpCPU = *cpu;

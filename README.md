@@ -13,12 +13,6 @@ GBEmu can be run from a standard GUI file manager (e.g. Finder, Windows Explorer
 GBEmu supports both keyboard and controller input.  Any controller supported by SDL2 should be supported. Xbox One/360, PS4, PS3, controllers are included. A list can be found [here](https://github.com/gabomdq/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt).  Right, now mappings are fixed, but customization will be coming in the future.  
 
 There is a bunch of functionality available on the keyboard that is not currently mapped to the controller (e.g. pausing emulation).  More thought needs to be put into how it should map to the controller.
-#### Controller
-- `D-Pad or Left Analog Stick` -- Up, Down, Left, Right
-- `A B` -- A, B respectively
-- `Start Back (Options Touchpad Button for PS4)` -- Start, Select respectively
-- `Left Bumper (L1 for PS4)` -- Rewind
-
 
 #### Keyboard
 The following mapping is based on the US QWERTY keyboard:
@@ -37,6 +31,12 @@ The following mapping is based on the US QWERTY keyboard:
 - `N` -- Next instruction when emulator is paused, including when a breakpoint is hit.
 - `C` -- Continue from breakpoint.
 - `Ctrl (Command on Mac) - 0 to 9` -- Save current states 0 to 9
+
+#### Controller
+- `D-Pad or Left Analog Stick` -- Up, Down, Left, Right
+- `A B` -- A, B respectively
+- `Start Back (Options Touchpad Button for PS4)` -- Start, Select respectively
+- `Left Bumper (L1 for PS4)` -- Rewind
 
 ### Full Screen
 GBEmu supports full screen mode.  It can be toggled using `Ctrl (Command on Mac) - F`.  It should be noted that notifications currently don't show in full screen mode.  So, for example, you won't get any message for saving a save state like you do in windowed mode.
@@ -83,6 +83,7 @@ GBEmu has a second screen where you can access certain settings and a simple ROM
 - Set breakpoints, including hardware breakpoint.
 	- Can also break when setting or clearing certain bits.
 		- For example: You can set it to break when the LCD is turned off, which is clearing bit 7 of address $FF40. To do this, set **When to break:** to `Bits are cleared` and set the **Value:** field to `80` and **Address:** to `FF40`.  The 7th bit is set in the **Value:** field so the debugger knows to listen for the clearing of the 7th bit on address $FF40.
+- When breakpoints are set, you can enabled Debug Recording which allows you to do reverse debugging.  This feature is pretty slow right now, so only use it when your breakpoint is not too far away.
 - Look at the disassembly.  Breakpoints can be set from the disassembler.
 	- Can search source and go to address.
 - Viewing the memory map.  Breakpoints can be set from the memory map.

@@ -1154,7 +1154,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         }
 
         if (ImGui::CollapsingHeader("Debug Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (gbDebug->shouldRecordDebugState) {
+            if (gbDebug->isRecordDebugStateEnabled && cpu->isPaused) {
                 ImGui::Text("Number of instructions recorded: %d", gbDebug->numDebugStates);
             }
             if (cpu->isPaused) {
@@ -1207,10 +1207,9 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             //ImGui::SameLine();
             //ImGui::Checkbox("Skip Boot Screen", &gbDebug->shouldSkipBootScreen);
 
-            //TODO: renable once there is a better way of recording
-            ImGui::Checkbox("Debug Recording (Slow)", &gbDebug->shouldRecordDebugState);
+            ImGui::Checkbox("Debug Recording (Slow)", &gbDebug->isRecordDebugStateEnabled);
 
-            if (!gbDebug->shouldRecordDebugState && !cpu->isPaused) {
+            if (!gbDebug->isRecordDebugStateEnabled && !cpu->isPaused) {
                 gbDebug->numDebugStates = 0;
 
             }

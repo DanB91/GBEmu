@@ -79,7 +79,7 @@ struct GameBoyDebug {
     GameBoyState prevGBDebugStates[60]; //used for debugging
     int numDebugStates;
     i64 currentDebugState;
-    bool shouldRecordDebugState;
+    bool isRecordDebugStateEnabled;
     
     struct Tile {
         bool needsUpdate;
