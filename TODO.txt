@@ -34,18 +34,13 @@ Code Style:
     
 
 Features:
-    - Custom Home Directory
-        - Maybe create small home folder config file
-        - Might need to be stored in ENV variable or registry
-        - Ability to set and reset that variable from GBEmu (can't be in the config file).
-    
-    - On screen notifications
-    
-    - Implement "temp" mode where GBEmu doesn't write any files and thus doesn't need a gbemu_home.
-    
     -Config file (support config file via command line as well).
         - Key and controller mappings
         - Color schemes
+        
+    - On screen notifications
+    
+    - Implement "temp" mode where GBEmu doesn't write any files and thus doesn't need a gbemu_home.
      
     - Game Boy Color
     
