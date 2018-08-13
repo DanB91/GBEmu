@@ -1,9 +1,9 @@
 # GBEmu
 
-GBEmu (working title) is a Game Boy Emulator written in a C-style C++ (using some C++11 features like auto) and SDL2 (and a tiny bit of GTK3 on Linux). Some distinctive features include a ROM debugger, a rewind system and easy-to-use quick save and restore slots.
+GBEmu (working title) is a Game Boy Emulator written in a C-style C++ (using some C++11 features like auto) and SDL2 (and a tiny bit of GTK3 on Linux). Some distinctive features include a ROM debugger, a rewind system and easy-to-use quick save and restore slots. Right now it works on Mac, Windows and Linux.  
 
-Right now it works on Mac, Windows and Linux.  It should be noted it was primarily developed on Mac/Linux and then "ported" over to Windows.  I don't currently have prepackaged binaries, but they should be coming in the future.
 ## Usage
+
 ### Starting GBEmu
 GBEmu can be run from a standard GUI file manager (e.g. Finder, Windows Explorer) or the command line.  When running from the GUI an open dialog will be prompt to open a Game Boy ROM from the `ROMs` folder in the `Home Diretory` (see the **Home Diretory**). A ROM can also be opened from the command line. This is the command line usage:
 * `gbemu [-d] path_to_ROM`
