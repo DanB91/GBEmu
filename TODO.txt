@@ -1,7 +1,11 @@
 Bugs/Optimization:
-    - Look into how games use the RTC other than Pokemon
+    - tie .gb and .gbc files to app
     
-    - Restructure MBCs into function pointers
+    - Fix bugs for gameboy demo
+    
+    - Unity build for gbemu.o
+    
+    - Look into how games use the RTC other than Pokemon
     
     - Optimize sound
     
@@ -52,6 +56,12 @@ Features:
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 Bug Notes:
 
+-Debug pocket.gb demo
+    - Gray screen after eye demo
+    - Looks like address 0x27BF we are checking ly is never 144 as expected. It is 145, 147 or 149.  looks like the VBlank handler takes a variable number of scanlines
+        to complete.  
+    - This implies timings might be incorrect with lcd
+
 - Debug 2048
     - Caused when uncommenting the ScanVRAMAndOAM lockout code.
     - Its tryring to write a value at 9A08 but the LCD is in ScanVRAMAndOAM mode. LCD timings might be off
@@ -93,3 +103,4 @@ The thing is, we are in VBlank!!
 THe solution:
 
     Compared it to BGB: rLY (FF44) is supposed to be 0 when lcd is disabled.  Once I put the fix in, it started working!
+    

@@ -22,6 +22,9 @@ static ProfileState *profileState;
 
 static bool
 shouldBreakOnPC(u16 PC, GameBoyDebug *gbDebug, Breakpoint **hitBreakpoint) {
+    if (!gbDebug->isEnabled || gbDebug->numBreakpoints <= 0)  {
+        return false;
+    }
     foriarr (gbDebug->breakpoints) {
         Breakpoint *bp = &gbDebug->breakpoints[i];
         if (!bp->isUsed || bp->isDisabled || bp->type != BreakpointType::Regular) {
@@ -1265,6 +1268,11 @@ u8 readByte(u16 address, MMU *mmu) {
 
                         clearBit((int)i, &mmu->requestedInterrupts);
                         cpu->enableInterrupts = false;
+                        Breakpoint *bp;
+                        if (shouldBreakOnPC(cpu->PC, gbDebug, &bp)) {
+                            gbDebug->hitBreakpoint = bp;
+                            return;
+                        }
                         break;
                     }
                 }
@@ -3142,7 +3150,7 @@ u8 readByte(u16 address, MMU *mmu) {
         }
 
         Breakpoint *bp;
-        if (gbDebug->numBreakpoints > 0 && gbDebug->isEnabled && shouldBreakOnPC(cpu->PC, gbDebug, &bp)) {
+        if (shouldBreakOnPC(cpu->PC, gbDebug, &bp)) {
             gbDebug->hitBreakpoint = bp;
             return;
         }
@@ -3371,8 +3379,8 @@ u8 readByte(u16 address, MMU *mmu) {
          * Step
          ************************/
         profileStart("Step loop", profileState);
+        cpu->cylesExecutedThisFrame = 0;
         if (!cpu->isPaused){
-            cpu->cylesExecutedThisFrame = 0;
             i32 cyclesToExecute = ((i32)((CLOCK_SPEED_HZ * dt) / 1000000) + cpu->leftOverCyclesFromPreviousFrame);
 
             //cycles are in multiples of 4
