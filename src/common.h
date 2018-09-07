@@ -20,8 +20,10 @@
 #ifdef WINDOWS
 #include <windows.h>
 #define FILE_SEPARATOR "\\"
+#define ENDL "\r\n"
 #elif defined(UNIX)
 #define FILE_SEPARATOR "/"
+#define ENDL "\n"
 #endif
 
 #include <stdint.h>
@@ -233,7 +235,7 @@ inline i64 intPow(i64 base, i64 exp) {
 #define PUSHMSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (i64)sizeof(type)) 
 #define PUSHMCLRSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (i64)sizeof(type), true) 
 #define RESIZEM(ptr, n, type) (type*)resizeMemory((u8*)ptr, (n) * (i64)sizeof(type)) 
-#define RESIZEMSTACK(stack, ptr, n, type) (type*)resizeMemory(stack, (u8*)ptr, (n) * (i64)sizeof(type)) 
+#define RESIZEMSTACK(stack, ptr, n, type) (type*)resizeMemory((u8*)ptr, stack, (n) * (i64)sizeof(type)) 
 #define POPMSTACK(mem, stack) popMemory((u8*)mem, stack)
 #define POPM(mem) popMemory((u8*)mem)
 #define ZEROM(mem, n, type) zeroMemory(mem, (n) * (i64)sizeof(type))
@@ -303,6 +305,7 @@ void *pushMemory(MemoryStack* stack, i64 size, bool clearToZero = false);
 void popMemory(u8* memoryToPop, MemoryStack* stack); 
 void *resizeMemory(u8* memoryToResize, MemoryStack* stack, i64 newSize);
 void resetStack(MemoryStack* stack, bool clearToZero);
+i64 getAmountOfMemoryLeft(MemoryStack *stack);
 
 void *chkMalloc(size_t numBytes);
 
@@ -374,13 +377,16 @@ void *buf__grow(const void *buf, size_t new_len, size_t elem_size);
 #define MAX_PATH_LEN (MAX_PATH * 4)
 #endif
 enum class FileSystemResultCode {
-  OK,
-  PermissionDenied,
-  OutOfSpace,
-  AlreadyExists,
-  IOError,
-  NotFound,
-  Unknown
+    OK = 0,
+    PermissionDenied,
+    OutOfSpace,
+    OutOfMemory,
+    AlreadyExists,
+    IOError,
+    NotFound,
+    Unknown,
+    
+    SizeOfEnumMinus1
 };
 
 struct ReadFileResult {
@@ -406,7 +412,7 @@ i64 timestampFileName(const char *fileName, const char *extension, char *outStr)
 
 ReadFileResult readEntireFile(const char* fileName,  MemoryStack *memory);
 void freeFileBuffer(ReadFileResult* fileDataToFree, MemoryStack *memory);
-FileSystemResultCode writeDataToFile(void* data, i64 size, const char *fileName); 
+FileSystemResultCode writeDataToFile(const void* data, i64 size, const char *fileName); 
 FileSystemResultCode copyFile(const char *src, const char *dest,  MemoryStack *fileMemory);
 
 MemoryMappedFileHandle *mapFileToMemory(const char *fileName, u8 **outData, usize *outLen);
@@ -588,6 +594,7 @@ void makeMemoryStack(i64 size, const char *name, MemoryStack *out) {
 
     out->isInited = true;
 #ifdef CO_DEBUG
+    CO_ASSERT(memoryContext->dms.numStacks < MAX_STACKS);
     memoryContext->dms.existingStacks[memoryContext->dms.numStacks++] = out;
 #endif
     
@@ -728,10 +735,17 @@ void *pushMemory(MemoryStack* stack, i64 size, bool clearToZero) {
     CO_ASSERT(stack->isInited);
     u8* ret = stack->nextFreeAddress;
 
+    CO_ASSERT(stack->nextFreeAddress + size - stack->baseAddress <= 
+            (i64)stack->maxSize);
+    if (stack->nextFreeAddress + size - stack->baseAddress > 
+            (i64)stack->maxSize) {
+        return nullptr;
+        //TODO: exit here
+    }
+    
     stack->nextFreeAddress += size;
 
-    CO_ASSERT(stack->nextFreeAddress - stack->baseAddress <= 
-            (i64)stack->maxSize);
+    
 
     if (clearToZero) {
         zeroMemory(ret, size);
@@ -754,7 +768,7 @@ void *resizeMemory(u8* memoryToResize, MemoryStack* stack, i64 newSize) {
     CO_ASSERT(stack->isInited);
     popMemory(memoryToResize, stack);
 
-    void* ret = pushMemory(stack, newSize, false);
+    void *ret = pushMemory(stack, newSize, false);
     return ret;
 
 }
@@ -766,6 +780,13 @@ void resetStack(MemoryStack* stack, bool clearToZero = false) {
     if (clearToZero) {
         zeroMemory(stack->baseAddress, stack->maxSize);
     }
+}
+
+i64 getAmountOfMemoryLeft(MemoryStack *stack) {
+   i64 ret = (stack->isInited) ?
+               (stack->baseAddress + stack->maxSize) - stack->nextFreeAddress :
+               0; 
+   return ret >= 0 ? ret : 0;
 }
 
 void *chkMalloc(size_t numBytes) {
@@ -1124,7 +1145,7 @@ struct MemoryMappedFileHandle {
 };
 
 
-FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName) {
+FileSystemResultCode writeDataToFile(const void *data, i64 size, const char *fileName) {
     FILE *f = fopen(fileName, "wb");
     if (!f) {
         CO_ERR("Error opening file %s", fileName);
@@ -1157,8 +1178,7 @@ FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName)
     
     return FileSystemResultCode::OK;
 }
-ReadFileResult 
-readEntireFile(const char *fileName, MemoryStack *fileMemory) {
+ReadFileResult readEntireFile(const char *fileName, MemoryStack *fileMemory) {
     CO_ASSERT(fileMemory->isInited);
 
     ReadFileResult ret = {};
@@ -1188,10 +1208,11 @@ readEntireFile(const char *fileName, MemoryStack *fileMemory) {
     fseek(f, 0l, SEEK_END);
     size = ftell(f);
     fseek(f, 0l, SEEK_SET);
-
+    
     data = PUSHMSTACK(fileMemory, size, u8);
 
     if (!data) {
+        ret.resultCode = FileSystemResultCode::OutOfMemory; 
         goto error;
     }
 

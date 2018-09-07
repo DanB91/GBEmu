@@ -42,6 +42,8 @@ debug: CPPFLAGS+=-DCO_DEBUG -DCO_PROFILE -g
 debug: FPIC+=-fPIC
 debug: ctime_begin build build/gbemu build/gbemu.so ctime_end
 
+test: build/test
+
 build/sdl_main.o: $(PLATFORM_SRC) $(PLATFORM_INC) FORCE 
 	$(CC) -c -o $@ $< $(CPPFLAGS) 
 
@@ -68,6 +70,10 @@ build/gbemu.so: $(GAME_OBJ) build/imgui-fpic.o FORCE
 build/gbemu_release: $(PLATFORM_OBJ) $(GAME_OBJ)
 	$(CC) $(PLATFORM_OBJ) $(GAME_OBJ) $(LDFLAGS) -ldl -o $@
 	@mv $@ build/gbemu
+build/test: src/tests/configFileTest.cpp FORCE
+	$(CC) -o $@ $< $(CPPFLAGS)
+	build/test
+        
 print-%  : ; @echo $* = $($*)
 
 FORCE:

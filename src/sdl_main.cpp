@@ -6,6 +6,7 @@
 #include <SDL2/SDL_opengl.h>
 #include <SDL2/SDL_opengl_glext.h>
 
+#include "config.h"
 
 //unity
 #define CO_IMPL
@@ -14,6 +15,7 @@
 #include "gbemu.h"
 #include "debugger.h"
 #include "3rdparty/gl3w.c"
+#include "config.cpp"
 
 #ifdef WINDOWS
 #include <io.h>
@@ -29,8 +31,8 @@
 #define HOME_PATH_ENV_VARIABLE "GBEMU_HOME"
 #define HOME_PATH_CONFIG_FILE "gbemu_home_path.txt"
 
-//TODO:
-#define GBEMU_CONFIG "config.txt"
+#define GBEMU_CONFIG_FILENAME "config.txt"
+#define GBEMU_CONFIG_FILE_PATH (".." FILE_SEPARATOR GBEMU_CONFIG_FILENAME)
 
 #define CART_RAM_FILE_EXTENSION "sav"
 #define RTC_FILE_LEN 48
@@ -53,7 +55,102 @@
 #   define CTRL_KEY KMOD_CTRL
 #endif
 
+#ifdef CO_PROFILE
+    static ProfileState *profileState;
+#endif
+    
 #define ANALOG_STICK_DEADZONE 8000
+    
+#define NO_MAPPING -1
+
+#define DEFAULT_KEY_UP SDLK_w
+#define DEFAULT_CONTROLLER_UP SDL_CONTROLLER_BUTTON_DPAD_UP
+
+#define DEFAULT_KEY_DOWN SDLK_s
+#define DEFAULT_CONTROLLER_DOWN SDL_CONTROLLER_BUTTON_DPAD_DOWN
+
+#define DEFAULT_KEY_LEFT SDLK_a
+#define DEFAULT_CONTROLLER_LEFT SDL_CONTROLLER_BUTTON_DPAD_LEFT
+
+#define DEFAULT_KEY_RIGHT SDLK_d
+#define DEFAULT_CONTROLLER_RIGHT SDL_CONTROLLER_BUTTON_DPAD_RIGHT
+
+#define DEFAULT_KEY_B SDLK_PERIOD
+#define DEFAULT_CONTROLLER_B SDL_CONTROLLER_BUTTON_B
+
+#define DEFAULT_KEY_A SDLK_SLASH
+#define DEFAULT_CONTROLLER_A SDL_CONTROLLER_BUTTON_A
+
+#define DEFAULT_KEY_START SDLK_RETURN
+#define DEFAULT_CONTROLLER_START SDL_CONTROLLER_BUTTON_START
+
+#define DEFAULT_KEY_SELECT SDLK_BACKSLASH
+#define DEFAULT_CONTROLLER_SELECT SDL_CONTROLLER_BUTTON_BACK
+
+#define DEFAULT_KEY_REWIND SDLK_LEFT
+#define DEFAULT_CONTROLLER_REWIND SDL_CONTROLLER_BUTTON_LEFTSHOULDER
+
+#define DEFAULT_KEY_MUTE SDLK_m
+#define DEFAULT_CONTROLLER_MUTE NO_MAPPING
+
+#define DEFAULT_KEY_PAUSE SDLK_p
+#define DEFAULT_CONTROLLER_PAUSE NO_MAPPING
+
+#define DEFAULT_KEY_STEP SDLK_n
+#define DEFAULT_CONTROLLER_STEP NO_MAPPING
+
+#define DEFAULT_KEY_CONTINUE SDLK_c
+#define DEFAULT_CONTROLLER_CONTINUE NO_MAPPING
+
+
+static const char defaultConfigFileContents[] = 
+        "#Keyboard Mappings" ENDL 
+        ENDL
+       "up = key w" ENDL 
+       "down = key s" ENDL
+       "left = key a" ENDL
+       "right = key d" ENDL
+       ENDL 
+       "start = key start" ENDL 
+       "select = key period" ENDL
+       ENDL 
+       "a = key slash" ENDL 
+       "b = key period" ENDL
+        ENDL
+        "rewind = key left" ENDL
+        "mute = key m" ENDL
+        "step = key n" ENDL
+        "continue = key c" ENDL
+        ENDL
+        "#Controller Mappings" ENDL
+        ENDL
+        "up = controller up" ENDL 
+        "down = controller down" ENDL
+        "left = controller left" ENDL
+        "right = controller right" ENDL
+        ENDL 
+        "start = controller start" ENDL 
+        "select = controller select" ENDL
+        ENDL 
+        "a = controller a" ENDL 
+        "b = controller b" ENDL
+        ENDL
+        "rewind = controller lb" ENDL
+        ENDL
+        "#Misc" ENDL
+        "screen_scale = 4";
+
+static const char *resultCodeToString[(int)FileSystemResultCode::SizeOfEnumMinus1 + 1] = {
+    [(int)FileSystemResultCode::OK] =  "",
+    [(int)FileSystemResultCode::PermissionDenied] = "Permission denied",
+    [(int)FileSystemResultCode::OutOfSpace] = "Out of disk space",
+    [(int)FileSystemResultCode::OutOfMemory] = "Out of memory",
+    [(int)FileSystemResultCode::AlreadyExists] = "File already exists",
+    [(int)FileSystemResultCode::IOError] = "Error reading or writing to disk",
+    [(int)FileSystemResultCode::NotFound] = "File not found",
+    [(int)FileSystemResultCode::Unknown] = "Unknown error"
+    
+};
 
 #define ALERT(fmt, ...)  do {\
     char *msg = nullptr;\
@@ -62,6 +159,7 @@
     alertDialog(msg);\
     buf_free(msg);\
 }while(0)
+#define ALERT_EXIT(fmt, ...) ALERT(fmt" Exiting...", ##__VA_ARGS__)
 bool openFileDialogAtPath(const char *path, char *outPath);
 bool openDirectoryAtPath(const char *path, char *outPath);
 
@@ -736,12 +834,76 @@ static bool backupCartRAMFile(const char *fileNameToBackup, const char *extensio
     return true;
 }
 
+static bool doConfigFileParsing() {
+    auto result = parseConfigFile(".." FILE_SEPARATOR GBEMU_CONFIG_FILENAME); 
+    switch (result.fsResultCode) {
+    case FileSystemResultCode::OK:  {
+        //do nothing and continue 
+    } break;
+    case FileSystemResultCode::NotFound: {
+        freeParserResult(&result);
+        
+        profileStart("Save new file", profileState);
+        auto writeResult = writeDataToFile(defaultConfigFileContents, sizeof(defaultConfigFileContents) - 1, GBEMU_CONFIG_FILE_PATH);
+        switch (writeResult) {
+        case FileSystemResultCode::OK: {
+           //continue 
+        } break;
+        default: {
+           ALERT_EXIT("Failed to save default config file. Reason: %s.", resultCodeToString[(int)writeResult]); 
+           return false;
+        } break;
+        }
+        profileEnd(profileState);
+
+        profileStart("Parse new config file", profileState); 
+        result = parseConfigFile(GBEMU_CONFIG_FILE_PATH); 
+        
+        switch (result.fsResultCode) {
+        case FileSystemResultCode::OK:  {
+            //do nothing and continue 
+        } break;
+            
+        default: {
+            ALERT_EXIT("Failed to read the newly created" GBEMU_CONFIG_FILENAME " file. Reason: %s.",  resultCodeToString[(int)result.fsResultCode]);
+            return false;
+        } break;
+        }
+        
+        switch (result.status) {
+        case ParserStatus::OK: {
+            //do nothing and continue 
+        } break;
+            
+        case ParserStatus::UnexpectedToken: {
+           ALERT_EXIT("Unexpected token in %s on line %d at column %d.", GBEMU_CONFIG_FILENAME, result.errorLine, result.errorColumn);
+           return false;
+        } break;
+        }
+        
+        fori (result.numConfigPairs) {
+          ConfigPair *cp = result.configPairs + i;  
+          
+        }
+        
+        profileEnd(profileState);
+    } break;
+    default: {
+       ALERT_EXIT("Failed to read " GBEMU_CONFIG_FILENAME ". Reason: %s.",  resultCodeToString[(int)result.fsResultCode]);
+       return false;
+    } break;
+    }
+    
+    freeParserResult(&result);
+    return true;
+}
+
 static void 
 mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
          SDL_AudioDeviceID audioDeviceID, SDL_GameController **controller, const char *romFileName,
          bool shouldEnableDebugMode, DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug, ProgramState *programState) {
 #ifdef CO_PROFILE
-    ProfileState *profileState = &programState->profileState;
+    profileState = &programState->profileState;
 #endif
     //TODO: should we not be passing gbDebug in here?
     //change to gbemu_config
@@ -795,6 +957,10 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         } break;
         case FileSystemResultCode::IOError: {
             ALERT("Could not open ROM: %s. IO Error.", romFileName);
+            return;
+        } break;
+        case FileSystemResultCode::OutOfMemory: {
+            ALERT("Could not open ROM: %s. File is too big!", romFileName);
             return;
         } break;
         default: {
@@ -917,7 +1083,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         }
         
         if (!doesDirectoryExistAndIsWritable(programState->homeDirectoryPath)) {
-            ALERT("Cannot write to GBEmu home directory: %s. Permission Denied. Exiting...", programState->homeDirectoryPath);
+            ALERT_EXIT("Cannot write to GBEmu home directory: %s. Permission Denied.", programState->homeDirectoryPath);
             return;
         }
         
@@ -929,17 +1095,17 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
             switch (res) {
             case FileSystemResultCode::OK: {
                 if (!doesDirectoryExistAndIsWritable(programState->romSpecificPath)) { 
-                    ALERT("Cannot create save files at (%s). Exiting...", programState->romSpecificPath);
+                    ALERT_EXIT("Cannot create save files at (%s).", programState->romSpecificPath);
                     return;
                 }
 
             } break; 
             case FileSystemResultCode::PermissionDenied: {
-                ALERT("Cannot create save files at (%s). Permission denied. Exiting...", programState->romSpecificPath);
+                ALERT_EXIT("Cannot create save files at (%s). Permission denied.", programState->romSpecificPath);
                 return;
             } break;
             default:  {
-                ALERT("Cannot create save files at (%s). Exiting...", programState->romSpecificPath);
+                ALERT_EXIT("Cannot create save files at (%s).", programState->romSpecificPath);
                 return;
             } break;
             }
@@ -951,11 +1117,11 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         } break;
             
         case FileSystemResultCode::PermissionDenied:  {
-            ALERT("Cannot use required directory: %s. Permission Denied. Exiting...", programState->romSpecificPath);
+            ALERT_EXIT("Cannot use required directory: %s. Permission Denied.", programState->romSpecificPath);
             return;
         } break;
         default: {
-            ALERT("Cannot use required directory: %s. Exiting...", programState->romSpecificPath);
+            ALERT_EXIT("Cannot use required directory: %s.", programState->romSpecificPath);
             return;
         } break;
             
@@ -963,6 +1129,15 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         /******************************************
          * Everything after here is relative to the rom directory!!
          *******************************************/
+        /*
+         * Parse Config file
+         */
+//        profileStart("Parse Config file", profileState);
+        
+//        if (!doConfigFileParsing()) {
+//            return;
+//        }
+//        profileEnd(profileState);
         if (mmu->hasBattery) {
             snprintf(filePath, ARRAY_LEN(filePath), "%s." CART_RAM_FILE_EXTENSION, programState->loadedROMName);
             
@@ -1525,12 +1700,13 @@ int main(int argc, char **argv) {
     char homePathConfigFilePath[MAX_PATH_LEN] = {};
     bool isHomePathValid = false;
     {
-        if (!initMemory(MB(60), MB(50))) {
-            ALERT("Not enough memory to run the emulator!");
+        if (!initMemory(GENERAL_MEMORY_SIZE + FILE_MEMORY_SIZE, GENERAL_MEMORY_SIZE)) {
+            //Do not use ALERT since it uses general memory which failed to init
+            alertDialog("Not enough memory to run the emulator!");
             goto exit;
         }
         programState = PUSHM(1, ProgramState);
-        makeMemoryStack(MB(8), "fileMem", &programState->fileMemory);
+        makeMemoryStack(FILE_MEMORY_SIZE, "fileMem", &programState->fileMemory);
 
     }
 
@@ -1544,14 +1720,14 @@ int main(int argc, char **argv) {
            isHomePathValid = true;
         }
         else {
-            ALERT("The specified GBEmu home directory, %s, either does not exist or is not writable.\n"
-                  "Please correct or unset the %s environment variable and rerun GBEmu. Exiting...", programState->homeDirectoryPath, HOME_PATH_ENV_VARIABLE);
+            ALERT_EXIT("The specified GBEmu home directory, %s, either does not exist or is not writable.\n"
+                  "Please correct or unset the %s environment variable and rerun GBEmu.", programState->homeDirectoryPath, HOME_PATH_ENV_VARIABLE);
             return 1;
         }
     }
     if (!isHomePathValid) {
         if (!getFilePathInHomeDir(HOME_PATH_CONFIG_FILE, homePathConfigFilePath)) {
-            ALERT("Could not get user home directory! Exiting...");        
+            ALERT_EXIT("Could not get user home directory!");        
             return 1;
         }
         auto readResult = readEntireFile(homePathConfigFilePath, &programState->fileMemory);
@@ -1564,8 +1740,8 @@ int main(int argc, char **argv) {
                     isHomePathValid = true;
                 }
                 else {
-                    ALERT("The specified GBEmu home directory, %s, either does not exist or is not writable.\n"
-                          "Please correct the contents or delete the %s file and rerun GBEmu. Exiting...", 
+                    ALERT_EXIT("The specified GBEmu home directory, %s, either does not exist or is not writable.\n"
+                          "Please correct the contents or delete the %s file and rerun GBEmu.", 
                           programState->homeDirectoryPath, homePathConfigFilePath);
                     return 1;
                 }
@@ -1582,9 +1758,9 @@ int main(int argc, char **argv) {
     if (!isHomePathValid) {
 		//NOTE: interestingly, SDL_Init must be called after opening an open dialog.  else new folder dialog doesn't work in macOS
         if (!getFilePathInHomeDir(DEFAULT_GBEMU_HOME_PATH, programState->homeDirectoryPath)) {
-	    ALERT("Could not get user home directory! Exiting...");        
-	    return 1;
-	}
+            ALERT_EXIT("Could not get user home directory!");        
+            return 1;
+        }
         auto result = showHomeDirectoryDialog(programState->homeDirectoryPath, homePathConfigFilePath);
         switch (result) {
         case HomeDirectoryOption::EXIT: {
@@ -1596,17 +1772,13 @@ int main(int argc, char **argv) {
                 switch (res) {
                 case FileSystemResultCode::OK: {
                     if (!doesDirectoryExistAndIsWritable(programState->homeDirectoryPath)) { 
-                        ALERT("Cannot create GBEmu home directory (%s). Exiting...", programState->homeDirectoryPath);
+                        ALERT_EXIT("Cannot create GBEmu home directory (%s).", programState->homeDirectoryPath);
                         return 1;
                     }
 
                 } break; 
-                case FileSystemResultCode::PermissionDenied: {
-                    ALERT("Cannot create GBEmu home directory (%s). Permission denied.  Exiting...", programState->homeDirectoryPath);
-                    return 1;
-                } break;
                 default:  {
-                    ALERT("Cannot create GBEmu home directory (%s). Exiting...", programState->homeDirectoryPath);
+                    ALERT_EXIT("Cannot create GBEmu home directory (%s). Reason: %s.", programState->homeDirectoryPath, resultCodeToString[(int)res]);
                     return 1;
                 } break;
                 }
@@ -1616,7 +1788,7 @@ int main(int argc, char **argv) {
             char home[MAX_PATH_LEN];
             *home = '\0';
             if (!getFilePathInHomeDir("", home)) {
-                ALERT("Could not get user home directory! Exiting...");        
+                ALERT_EXIT("Could not get user home directory!");        
                 return 1;
             }
             for (;;) {
@@ -1640,13 +1812,12 @@ int main(int argc, char **argv) {
            //do nothing 
         } break;
         case FileSystemResultCode::PermissionDenied: {
-           ALERT("Could not persist the GBEmu home directory path to %s. Permission Denied. Please make sure your user home directory is writable. "
-                 "Exiting...",
+           ALERT_EXIT("Could not persist the GBEmu home directory path to %s. Permission Denied. Please make sure your user home directory is writable.",
                  homePathConfigFilePath);
            return 1;
         } break;
         default: {
-           ALERT("Could not persist the GBEmu home directory path to %s. Exiting...",
+           ALERT_EXIT("Could not persist the GBEmu home directory path to %s.",
                  homePathConfigFilePath);
            return 1;
         }
@@ -1678,7 +1849,6 @@ int main(int argc, char **argv) {
     profileEnd(&programState->profileState);
 	if (isEmptyString(romFileName)){
 		//NOTE: interestingly, SDL_Init must be called before opening an open dialog.  else an app instance won't be created in macOS
-        //TODO: should be value from config file
         if (!openFileDialogAtPath(openDialogPath, romFileName)) {
             return 1;
         }
@@ -1799,7 +1969,7 @@ bool openDirectoryAtPath(const char *path, char *outPath) {
 		return false;
 	}
 	if (!SHGetPathFromIDListW(result, wcharPath)) {
-		ALERT("Error with path chosen.  Exiting...");
+		ALERT_EXIT("Error with path chosen.");
 		return false;
 	}
 
@@ -1807,7 +1977,7 @@ bool openDirectoryAtPath(const char *path, char *outPath) {
 		WideCharToMultiByte(CP_UTF8, 0, wcharPath, MAX_PATH, outPath, MAX_PATH_LEN, nullptr, nullptr);
 
 	if (toUTF8Result == 0) {
-		ALERT("Error using the non-ASCII path.  Exiting...");
+		ALERT_EXIT("Error using the non-ASCII path.");
 	}
 	//TODO free pidlist_absolute
 
@@ -1817,7 +1987,7 @@ bool openDirectoryAtPath(const char *path, char *outPath) {
 #include <gtk/gtk.h>
 bool openFileDialogAtPath(const char *path, char *outPath) {
     if (!gtk_init_check(nullptr, nullptr)) {
-        ALERT("Failed to init the ROM file chooser dialog. Exiting...");
+        ALERT_EXIT("Failed to init the ROM file chooser dialog.");
         return false;
     }
     GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
@@ -1866,7 +2036,7 @@ bool openFileDialogAtPath(const char *path, char *outPath) {
 
 bool openDirectoryAtPath(const char *path, char *outPath) {
     if (!gtk_init_check(nullptr, nullptr)) {
-        ALERT("Failed to init the ROM file chooser dialog. Exiting...");
+        ALERT_EXIT("Failed to init the ROM file chooser dialog.");
         return false;
     }
     GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;

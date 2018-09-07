@@ -1,4 +1,6 @@
 Bugs/Optimization:
+    - Add out of memory alert to common.h
+    
     - tie .gb and .gbc files to app
     
     - Fix bugs for gameboy demo

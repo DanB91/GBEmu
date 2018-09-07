@@ -35,6 +35,9 @@
 #define MAX_SPRITE_HEIGHT  16
 #define MAX_SPRITE_WIDTH  8
 
+#define GENERAL_MEMORY_SIZE MB(50)
+#define FILE_MEMORY_SIZE MB(10)
+
 #define FRAME_SEQUENCER_PERIOD (CLOCK_SPEED_HZ/512)
 #define LENGTH_TIMER_PERIOD (512/256)
 #define SWEEP_TIMER_PERIOD (512/128)
@@ -478,6 +481,11 @@ struct NotificationState {
     i64 numItemsQueued;
 };
 struct GameBoyDebug;
+struct InputMapping {
+    int keyCode;
+    int buttonCode;  
+};
+
 struct Input {
 
     struct State {
@@ -501,6 +509,22 @@ struct Input {
     };
     State newState;
     State oldState;
+    
+    //TODO: hashmap to addresses of State booleans?
+    //Keyboard Mappings
+    union {
+        struct {
+            InputMapping leftMapping, rightMapping, upMapping, downMapping;
+            InputMapping aMapping, bMapping, startMapping, selectMapping;
+
+            InputMapping rewindStateMapping;
+
+            InputMapping pauseMapping, resetMapping, debugContinueMapping, nextStepMapping, debugOnMapping, muteMapping;
+        };
+        InputMapping controlCodeMappings[15];
+    };
+
+    //debug controls
 };
 
 struct ProgramState {
@@ -518,6 +542,8 @@ struct ProgramState {
     bool shouldUpdateTitleBar;
     MemoryStack fileMemory;
     void *guiContext; 
+    
+    int screenScale;
 };
 static inline u8
 lb(u16 word) {

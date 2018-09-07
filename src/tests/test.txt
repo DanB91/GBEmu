@@ -1,0 +1,11 @@
+#fdaf =fdafd
+#fdasfa#fjdai = fdaijfdai
+#ifjda=kjfdai
+
+a = key /   
+b = key .
+
+start = key #
+start = controller aji
+
+scale = 4
