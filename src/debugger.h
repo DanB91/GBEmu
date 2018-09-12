@@ -71,7 +71,7 @@ struct GameBoyDebug {
     bool wasCPUPaused;
     
     i64 nextFreeGBStateIndex;
-    i64 numGBStates;
+    isize numGBStates;
     TimeUS elapsedTimeSinceLastRecord;
     double frameTimeMS;
     GameBoyState recordedGBStates[60];

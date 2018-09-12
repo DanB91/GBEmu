@@ -553,13 +553,13 @@ static void drawBreakpointWindow(GameBoyDebug *gbDebug, TimeUS dt) {
                             char *label = PUSHM(labelCharLen, char);
                             AutoMemory _am(label);
 
-                            snprintf(label, (size_t)labelCharLen, "Delete##%lld", i);
+                            snprintf(label, (size_t)labelCharLen, "Delete##%zd", i);
                             if (ImGui::Button(label)) {
                                 bp->isUsed = false;
                                 gbDebug->numBreakpoints--;
                             }
                             ImGui::SameLine(); 
-                            snprintf(label, (size_t)labelCharLen, (bp->isDisabled) ? "Enable##%lld":"Disable##%lld", i);
+                            snprintf(label, (size_t)labelCharLen, (bp->isDisabled) ? "Enable##%zd":"Disable##%zd", i);
                             if (ImGui::Button(label)) {
                                 bp->isDisabled = !bp->isDisabled;
                             }
@@ -938,7 +938,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         }
     }
     ImGui::NewFrame();
-    if (!(gbDebug->isTypingInTextBox && IS_DOWN(start))) {
+    if (!(gbDebug->isTypingInTextBox && input->newState.enterPressed)) {
         gbDebug->isTypingInTextBox = ImGui::GetIO().WantCaptureKeyboard;
     }
 
@@ -963,7 +963,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         ImGui::SetWindowPos(ImVec2(0, 0), ImGuiCond_Once);
 
         ImGui::Text("Frame time %.2f", gbDebug->frameTimeMS);
-        ImGui::Text("Number of states saved: %lld", gbDebug->numGBStates);
+        ImGui::Text("Number of states saved: %zd", gbDebug->numGBStates);
         ImGui::Text("Mouse X: %d, Y: %d", input->newState.mouseX / SCREEN_SCALE, input->newState.mouseY/ SCREEN_SCALE);
         if (ImGui::CollapsingHeader("CPU")) {
             ImGui::Text("A: %X B: %X C: %X D: %X", cpu->A, cpu->B, cpu->C, cpu->D);
@@ -991,7 +991,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
 
             //ImGui::Text("In BIOS: %s", BOOL_TO_STR(mmu->inBios));
             ImGui::Text("Clock speed: %f cyles", cpu->cylesExecutedThisFrame / (dt/ 1000000.));
-            ImGui::Text("Total Cycles: %lld", cpu->totalCycles);
+            ImGui::Text("Total Cycles: %" PRId64, cpu->totalCycles);
         }
 
         if (ImGui::CollapsingHeader("Timer/Divider")) {
@@ -1072,8 +1072,8 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                         mmu->currentROMBank, mmu->currentRAMBank);
             ImGui::Text("Has RAM: %s, Has Battery: %s, Has RTC: %s",
                         BOOL_TO_STR(mmu->hasRAM), BOOL_TO_STR(mmu->hasBattery), BOOL_TO_STR(mmu->hasRTC));
-            ImGui::Text("RAM Enabled: %s, RAM Size: %lld", BOOL_TO_STR(mmu->isCartRAMEnabled), mmu->cartRAMSize);
-            ImGui::Text("ROM Size %lld", mmu->romSize);
+            ImGui::Text("RAM Enabled: %s, RAM Size: %zd", BOOL_TO_STR(mmu->isCartRAMEnabled), (isize)mmu->cartRAMSize);
+            ImGui::Text("ROM Size %zd", (isize)mmu->romSize);
 
         }
 
@@ -1585,7 +1585,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         if (ImGui::Begin("Sound Debug", &gbDebug->isSoundViewOpen, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("Is muted: %s", soundState->isMuted ? "true" : "false");
 
-            ImGui::Text("Samples backed up %lld", mmu->soundFramesBuffer.numItemsQueued);
+            ImGui::Text("Samples backed up %zd", (isize)mmu->soundFramesBuffer.numItemsQueued);
             ImGui::Text("Cycles since last frame seq tick: %d", mmu->cyclesSinceLastFrameSequencer);
             ImGui::Text("Master Left Volume: %d  Master Right Volume %d", mmu->masterLeftVolume, mmu->masterRightVolume); 
 

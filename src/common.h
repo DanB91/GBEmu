@@ -48,7 +48,7 @@ typedef uint16_t u16;
 typedef uint8_t u8;
 
 typedef size_t usize;
-typedef ptrdiff_t isize;
+typedef ssize_t isize;
 
 //millisecond time
 typedef i64 TimeMS;
@@ -60,8 +60,8 @@ typedef void (TimerFn)(void*);
 
 #define ARRAY_LEN(array) ((i32)(sizeof(array)/sizeof(*array)))
 #define UNUSED(x) ((void)(x))
-#define fori(x) for (i64 i = 0; i < (x); i++)
-#define forj(x) for (i64 j = 0; j < (x); j++)
+#define fori(x) for (isize i = 0; i < (x); i++)
+#define forj(x) for (isize j = 0; j < (x); j++)
 #define foriarr(x) fori(ARRAY_LEN(x))
 #define forjarr(x) forj(ARRAY_LEN(x))
 #define forirange(from,to) for (i64 i = (from); i < (to); i++)
@@ -289,7 +289,7 @@ struct AutoMemory {
 
 
 bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength);
-void makeMemoryStack(i64 length, const char* name, MemoryStack *out);
+void makeMemoryStack(isize length, const char* name, MemoryStack *out);
 
 MemoryContext *getMemoryContext();
 #ifdef CO_DEBUG
@@ -412,7 +412,7 @@ i64 timestampFileName(const char *fileName, const char *extension, char *outStr)
 
 ReadFileResult readEntireFile(const char* fileName,  MemoryStack *memory);
 void freeFileBuffer(ReadFileResult* fileDataToFree, MemoryStack *memory);
-FileSystemResultCode writeDataToFile(const void* data, i64 size, const char *fileName); 
+FileSystemResultCode writeDataToFile(const void* data, isize size, const char *fileName); 
 FileSystemResultCode copyFile(const char *src, const char *dest,  MemoryStack *fileMemory);
 
 MemoryMappedFileHandle *mapFileToMemory(const char *fileName, u8 **outData, usize *outLen);
@@ -575,7 +575,15 @@ DebugMemorySnapshot *memorySnapShot() {
 }
 #endif
 
-void makeMemoryStack(i64 size, const char *name, MemoryStack *out) {
+void makeMemoryStack(isize size, const char *name, MemoryStack *out) {
+#ifdef CO_DEBUG
+    CO_ASSERT(memoryContext->dms.numStacks < MAX_STACKS);
+    memoryContext->dms.existingStacks[memoryContext->dms.numStacks++] = out;
+#endif
+    CO_ASSERT_MSG(memoryContext->nextFreeAddress + size <= 
+            (u8*)memoryContext->memoryBase + memoryContext->size, "Request stack size %zd, bytes left: %ld", 
+                  size, ((u8*)memoryContext->memoryBase + memoryContext->size) - memoryContext->nextFreeAddress);
+    
     fori (ARRAY_LEN(out->name) - 1) {
         out->name[i] = *name;
         if (!*name++) break;
@@ -589,14 +597,8 @@ void makeMemoryStack(i64 size, const char *name, MemoryStack *out) {
 
     memoryContext->nextFreeAddress += size;
 
-    CO_ASSERT(memoryContext->nextFreeAddress < 
-            (u8*)memoryContext->memoryBase + memoryContext->size);
 
     out->isInited = true;
-#ifdef CO_DEBUG
-    CO_ASSERT(memoryContext->dms.numStacks < MAX_STACKS);
-    memoryContext->dms.existingStacks[memoryContext->dms.numStacks++] = out;
-#endif
     
 } 
 
@@ -1108,7 +1110,8 @@ u64 currentThreadID() {
 
 bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
    {
-        CO_ASSERT(totalMemoryLength > generalMemoryLength);
+        totalMemoryLength += sizeof(MemoryContext) + sizeof(MemoryStack);
+        CO_ASSERT(totalMemoryLength >= generalMemoryLength);
         MemoryContext tmpMC = {};
         tmpMC.size = (i64)totalMemoryLength;
 
@@ -1128,7 +1131,7 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
 
     {
         generalMemory = (MemoryStack*)memoryContext->nextFreeAddress;
-        memoryContext->nextFreeAddress += sizeof(MemoryContext);
+        memoryContext->nextFreeAddress += sizeof(MemoryStack);
         makeMemoryStack(generalMemoryLength, "general", generalMemory);
         memoryContext->generalMemory = generalMemory;
     }
@@ -1145,7 +1148,7 @@ struct MemoryMappedFileHandle {
 };
 
 
-FileSystemResultCode writeDataToFile(const void *data, i64 size, const char *fileName) {
+FileSystemResultCode writeDataToFile(const void *data, isize size, const char *fileName) {
     FILE *f = fopen(fileName, "wb");
     if (!f) {
         CO_ERR("Error opening file %s", fileName);
@@ -1159,7 +1162,7 @@ FileSystemResultCode writeDataToFile(const void *data, i64 size, const char *fil
     }
 
     if (fwrite(data, (size_t)size, 1, f) != 1) {
-        CO_ERR("Error writing %lld bytes to file %s", size, fileName);
+        CO_ERR("Error writing %zd bytes to file %s", size, fileName);
         if (ferror(f)) {
            switch (errno) {
            case ENOSPC: return FileSystemResultCode::OutOfSpace;
@@ -1310,7 +1313,13 @@ FileSystemResultCode changeDir(const char *path) {
 }
 
 bool doesDirectoryExistAndIsWritable(const char *path) {
-   return access(path, W_OK) == 0; 
+   struct stat pathStat;
+   if (stat(path, &pathStat) == 0) {
+       return S_ISDIR(pathStat.st_mode) && access(path, W_OK) == 0; 
+   }
+   else {
+       return false;
+   }
 }
 
 
@@ -1696,7 +1705,7 @@ FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName)
     }
 
     if (fwrite(data, (size_t)size, 1, f) != 1) {
-        CO_ERR("Error writing %lld bytes to file %s", size, fileName);
+        CO_ERR("Error writing %zd bytes to file %s", size, fileName);
         if (ferror(f)) {
            switch (errno) {
            case ENOSPC: return FileSystemResultCode::OutOfSpace;

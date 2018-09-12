@@ -1,11 +1,13 @@
-#fdaf =fdafd
-#fdasfa#fjdai = fdaijfdai
-#ifjda=kjfdai
+//fdaf =fdafd
+//fdasfa#fjdai = fdaijfdai
+//ifjda=kjfdai
 
 a = key /   
 b = key .
 
 start = key #
-start = controller aji
+start = controller start
 
-scale = 4
+pause = key command-p
+
+screenscale = 4

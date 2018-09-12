@@ -7,7 +7,7 @@
        PRINT("Assertion failed on line %d -- Actual: %d, Expected: %d -- Msg: %s", __LINE__, (int)actual, (int)expected, msg);\
        exit(1);\
     }\
-} while (0)\
+} while (0)
 
 int main() {
     if (!initMemory(MB(11),MB(10))) {
@@ -22,7 +22,7 @@ int main() {
     auto res = parseConfigFile("src/tests/test.txt");
     TEST_ASSERT_EQ(res.fsResultCode, FileSystemResultCode::OK, "File should exist");
     TEST_ASSERT_EQ(res.status, ParserStatus::OK, "Parse should have succeded");
-    TEST_ASSERT_EQ(res.numConfigPairs, 5, "Incorrect number of configs");
+    TEST_ASSERT_EQ(res.numConfigPairs, 6, "Incorrect number of configs");
     
     PRINT();
     PRINT("************************************");

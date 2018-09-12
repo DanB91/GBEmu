@@ -1,3 +1,5 @@
+//Copyright (C) 2018 Daniel Bokser.  See LICENSE.txt for license
+
 #pragma once
 #include "common.h"
 enum class ParserStatus {
@@ -5,42 +7,76 @@ enum class ParserStatus {
     BadRHSToken,
     BadLHSToken,
     UnknownLHSConfig,
-    BadMappingToken,
+    BadKeyMappingToken,
+    NumberKeyMappingNotAllowed,
+    BadControllerMappingToken,
     MissingEquals,
-    UnexpectedToken
+    UnexpectedToken,
+    UnrecognizedKeyMapping,
+    UnrecognizedControllerMapping
 };
 
 enum class LHSValue{
     Up, Down, Left, Right,
     A, B, Start, Select, Rewind,
     Step, Continue, Mute,
-    Scale
+    ScreenScale, Pause, ShowDebugger,
+    Reset, ShowHomePath, FullScreen
 };
 
-struct String {
+//non null terminated
+struct ConfigString {
     char *data;
     i64 len; 
 };
 struct LHS {
     LHSValue value; 
+    int posInLine;
+    int line;
 };
-
 
 enum class RHSType {
-    ControllerMapping, KeyMapping, RawValue
+    ControllerMapping, KeyMapping, Integer
 };
-enum class RHSValueType {
-    Identifier, Integer, Character,
+
+enum class KeyMappingType {
+    Character, MovementKey
+};
+enum class MovementKeyMappingValue {
+    Enter=0, Backspace, Tab, SpaceBar,
+    Up, Down, Left, Right
+};
+
+enum class ControllerMappingValue {
+    A=0, B, X, Y, Start, Select, LeftBumper, RightBumper, 
+    LeftTrigger, RightTrigger, Up, Down, Left, Right, Home
+};
+struct KeyMapping {
+    KeyMappingType type; 
+    union {
+        MovementKeyMappingValue movementKeyValue;
+        int intValue;
+        int characterValue;
+    };
+    bool isCtrlHeld;
+    int posInLine;
+    int line;
+};
+struct ControllerMapping {
+   ControllerMappingValue value; 
+   int posInLine;
+   int line;
 };
 
 struct RHS {
     RHSType rhsType;
-    RHSValueType valueType;
     union {
-        String identValue;
-        int intValue;
-        int characterValue;
+       KeyMapping keyMapping;
+       ControllerMapping controllerMapping;
+       int intValue; 
     };
+    int posInLine;
+    int line;
 };
 
 struct ConfigPair {

@@ -481,30 +481,51 @@ struct NotificationState {
     i64 numItemsQueued;
 };
 struct GameBoyDebug;
+
+#define NO_MAPPING -1
 struct InputMapping {
-    int keyCode;
-    int buttonCode;  
+    int keyCode = NO_MAPPING;
+    int buttonCode = NO_MAPPING;  
+    int commandCode = NO_MAPPING;
+};
+
+union InputMappingConfig {
+    struct {
+        InputMapping LeftMapping, RightMapping, UpMapping, DownMapping;
+        InputMapping AMapping, BMapping, StartMapping, SelectMapping;
+
+        InputMapping RewindMapping, ContinueMapping, StepMapping, MuteMapping;
+        InputMapping PauseMapping, ResetMapping, ShowDebuggerMapping, ShowHomePathMapping;
+        InputMapping FullScreenMapping;
+    };
+    InputMapping controlCodeMappings[17];
 };
 
 struct Input {
 
     struct State {
-        bool left, right, up, down;
-        bool a, b, start, select;
-        
         //emu controls
-        bool saveState, restoreState;
+        bool saveState, restoreState, escapeFullScreen, enterPressed;
+        
+        union { 
+            struct {
+                bool Left, Right, Up, Down;
+                bool A, B, Start, Select;
+
+                bool Rewind, Continue, Step, Mute;
+                bool Pause, Reset, ShowDebugger, ShowHomePath;
+                bool FullScreen;
+
+            };
+            bool actionsHit[17];
+        };
+        
         int slotToRestoreOrSave;
-        bool rewindState;
-        bool toggleFullScreen;
-        bool escapeFullScreen;
-        bool showHomeDirectory;
         
         //analog stick controls
         i16 xAxis, yAxis;
 
         //debug controls
-        bool pause, reset, debugContinue, nextStep, debugOn, mute;
         i32 mouseX, mouseY;
     };
     State newState;
@@ -512,17 +533,7 @@ struct Input {
     
     //TODO: hashmap to addresses of State booleans?
     //Keyboard Mappings
-    union {
-        struct {
-            InputMapping leftMapping, rightMapping, upMapping, downMapping;
-            InputMapping aMapping, bMapping, startMapping, selectMapping;
-
-            InputMapping rewindStateMapping;
-
-            InputMapping pauseMapping, resetMapping, debugContinueMapping, nextStepMapping, debugOnMapping, muteMapping;
-        };
-        InputMapping controlCodeMappings[15];
-    };
+    InputMappingConfig inputMappingConfig;
 
     //debug controls
 };

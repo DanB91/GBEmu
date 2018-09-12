@@ -36,8 +36,6 @@
 
 #define CART_RAM_FILE_EXTENSION "sav"
 #define RTC_FILE_LEN 48
-#define WINDOW_WIDTH (SCREEN_WIDTH * SCREEN_SCALE)
-#define WINDOW_HEIGHT (SCREEN_HEIGHT * SCREEN_SCALE)
 
 
 #define SECONDS_PER_FRAME (1.f/60)
@@ -61,7 +59,6 @@
     
 #define ANALOG_STICK_DEADZONE 8000
     
-#define NO_MAPPING -1
 
 #define DEFAULT_KEY_UP SDLK_w
 #define DEFAULT_CONTROLLER_UP SDL_CONTROLLER_BUTTON_DPAD_UP
@@ -91,54 +88,64 @@
 #define DEFAULT_CONTROLLER_REWIND SDL_CONTROLLER_BUTTON_LEFTSHOULDER
 
 #define DEFAULT_KEY_MUTE SDLK_m
-#define DEFAULT_CONTROLLER_MUTE NO_MAPPING
+#define DEFAULT_CONTROLLER_MUTE NO_INPUT_MAPPING
 
 #define DEFAULT_KEY_PAUSE SDLK_p
-#define DEFAULT_CONTROLLER_PAUSE NO_MAPPING
+#define DEFAULT_CONTROLLER_PAUSE NO_INPUT_MAPPING
 
 #define DEFAULT_KEY_STEP SDLK_n
-#define DEFAULT_CONTROLLER_STEP NO_MAPPING
+#define DEFAULT_CONTROLLER_STEP NO_INPUT_MAPPING
 
 #define DEFAULT_KEY_CONTINUE SDLK_c
-#define DEFAULT_CONTROLLER_CONTINUE NO_MAPPING
+#define DEFAULT_CONTROLLER_CONTINUE NO_INPUT_MAPPING
 
+#ifdef MAC 
+#   define CTRL "Command-"
+#else
+#   define CTRL "Ctrl-"
+#endif
 
 static const char defaultConfigFileContents[] = 
-        "#Keyboard Mappings" ENDL 
+        "//Keyboard Mappings" ENDL 
         ENDL
-       "up = key w" ENDL 
-       "down = key s" ENDL
-       "left = key a" ENDL
-       "right = key d" ENDL
+       "Up = Key W" ENDL 
+       "Down = Key S" ENDL
+       "Left = Key A" ENDL
+       "Right = Key D" ENDL
        ENDL 
-       "start = key start" ENDL 
-       "select = key period" ENDL
+       "Start = Key Enter" ENDL 
+       "Select = Key \\" ENDL
        ENDL 
-       "a = key slash" ENDL 
-       "b = key period" ENDL
+       "A = Key /" ENDL 
+       "B = Key ." ENDL
         ENDL
-        "rewind = key left" ENDL
-        "mute = key m" ENDL
-        "step = key n" ENDL
-        "continue = key c" ENDL
+        "Rewind = Key Left" ENDL
+        "Mute = Key M" ENDL
+        "Step = Key N" ENDL
+        "Continue = Key C" ENDL
+        "Pause = Key " CTRL "P" ENDL
+        "Reset = Key " CTRL "R" ENDL
+        "ShowDebugger = Key " CTRL "B" ENDL
+        "ShowHomePath = Key " CTRL "H" ENDL
+        "FullScreen = Key " CTRL "F" ENDL
         ENDL
-        "#Controller Mappings" ENDL
+        "//Controller Mappings" ENDL
         ENDL
-        "up = controller up" ENDL 
-        "down = controller down" ENDL
-        "left = controller left" ENDL
-        "right = controller right" ENDL
+        "Up = Controller Up" ENDL 
+        "Down = Controller Down" ENDL
+        "Left = Controller Left" ENDL
+        "Right = Controller Right" ENDL
         ENDL 
-        "start = controller start" ENDL 
-        "select = controller select" ENDL
+        "Start = Controller Start" ENDL 
+        "Select = Controller Select" ENDL
         ENDL 
-        "a = controller a" ENDL 
-        "b = controller b" ENDL
+        "A = Controller A" ENDL 
+        "B = Controller B" ENDL
         ENDL
-        "rewind = controller lb" ENDL
+        "Rewind = Controller LeftBumper" ENDL
         ENDL
-        "#Misc" ENDL
-        "screen_scale = 4";
+        "//Misc" ENDL
+        "ScreenScale = 4";
 
 static const char *resultCodeToString[(int)FileSystemResultCode::SizeOfEnumMinus1 + 1] = {
     [(int)FileSystemResultCode::OK] =  "",
@@ -149,7 +156,35 @@ static const char *resultCodeToString[(int)FileSystemResultCode::SizeOfEnumMinus
     [(int)FileSystemResultCode::IOError] = "Error reading or writing to disk",
     [(int)FileSystemResultCode::NotFound] = "File not found",
     [(int)FileSystemResultCode::Unknown] = "Unknown error"
+};
+
+static const SDL_Keycode movementKeyMappingToSDLKeyCode[] = {
+  [(int)MovementKeyMappingValue::Backspace] = SDLK_BACKSPACE, 
+  [(int)MovementKeyMappingValue::Enter] = SDLK_RETURN, 
+  [(int)MovementKeyMappingValue::Down] = SDLK_DOWN, 
+  [(int)MovementKeyMappingValue::Up] = SDLK_UP, 
+  [(int)MovementKeyMappingValue::Left] = SDLK_LEFT, 
+  [(int)MovementKeyMappingValue::Right] = SDLK_RIGHT, 
+  [(int)MovementKeyMappingValue::SpaceBar] = SDLK_SPACE, 
+  [(int)MovementKeyMappingValue::Tab] = SDLK_TAB, 
+};
+
+static const int controllerMappingToSDLButton[] = {
+  [(int)ControllerMappingValue::A] = SDL_CONTROLLER_BUTTON_A,  
+  [(int)ControllerMappingValue::B] = SDL_CONTROLLER_BUTTON_B,  
+  [(int)ControllerMappingValue::X] = SDL_CONTROLLER_BUTTON_X,  
+  [(int)ControllerMappingValue::Y] = SDL_CONTROLLER_BUTTON_Y,  
     
+  [(int)ControllerMappingValue::Up] = SDL_CONTROLLER_BUTTON_DPAD_UP,  
+  [(int)ControllerMappingValue::Down] = SDL_CONTROLLER_BUTTON_DPAD_DOWN,  
+  [(int)ControllerMappingValue::Left] = SDL_CONTROLLER_BUTTON_DPAD_LEFT,  
+  [(int)ControllerMappingValue::Right] = SDL_CONTROLLER_BUTTON_DPAD_RIGHT,  
+  
+  [(int)ControllerMappingValue::LeftBumper] = SDL_CONTROLLER_BUTTON_LEFTSHOULDER,  
+  [(int)ControllerMappingValue::RightBumper] = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,  
+    
+  [(int)ControllerMappingValue::Start] = SDL_CONTROLLER_BUTTON_START,  
+  [(int)ControllerMappingValue::Select] = SDL_CONTROLLER_BUTTON_BACK,  
 };
 
 #define ALERT(fmt, ...)  do {\
@@ -280,103 +315,48 @@ static HomeDirectoryOption showHomeDirectoryDialog(const char *defaultHomeDirPat
     return (success && pressedButton != -1) ? (HomeDirectoryOption)pressedButton : HomeDirectoryOption::EXIT;
 }
 
-static void processKey(SDL_Scancode key, bool isDown, bool isCtrlDown, Input::State *input) {
+static void processKey(SDL_Keycode key, bool isDown, bool isCtrlDown, Input::State *input, const InputMappingConfig *config) {
+    if (isCtrlDown) {
+        foriarr (config->controlCodeMappings) {
+            if (key == config->controlCodeMappings[i].commandCode) {
+                input->actionsHit[i] = isDown;
+            }
+        }
+    }
+    else {
+        foriarr (config->controlCodeMappings) {
+            if (key == config->controlCodeMappings[i].keyCode) {
+                input->actionsHit[i] = isDown;
+            }
+        }
+    }
+
     switch (key) {
-    case SDL_SCANCODE_W: {
-        input->up = isDown;
-    } break;
-    case SDL_SCANCODE_S: {
-        input->down = isDown;
-    } break;
-    case SDL_SCANCODE_A: {
-        input->left = isDown;
-    } break;
-    case SDL_SCANCODE_D: {
-        input->right = isDown;
-    } break;
-
-    case SDL_SCANCODE_PERIOD: {
-        input->b = isDown;
-    } break;
-
-    case SDL_SCANCODE_SLASH: {
-        input->a = isDown;
-    } break;
-
-    case SDL_SCANCODE_RETURN: {
-        input->start = isDown;
-    } break;
-
-    case SDL_SCANCODE_BACKSLASH: {
-        input->select = isDown;
-    } break;
-
-    case SDL_SCANCODE_N: {
-        input->nextStep = isDown;
-    } break;
-        
-    case SDL_SCANCODE_C: {
-        input->debugContinue = isDown;
-    } break;
-        
-    case SDL_SCANCODE_H: {
-        input->showHomeDirectory = isDown;
-    } break;
-
-    case SDL_SCANCODE_R: {
-        if (isCtrlDown) {
-            input->reset = isDown;
-        }
-    } break;
-
-    case SDL_SCANCODE_B: {
-        input->debugOn = isDown;
-    } break;
-
-    case SDL_SCANCODE_P: {
-        input->pause = isDown;
-    } break;
-
-    case SDL_SCANCODE_M: {
-        input->mute = isDown;
-    } break;
-        
-    case SDL_SCANCODE_F: {
-        if (isCtrlDown) {
-            input->toggleFullScreen = isDown;
-        }
-        else {
-            input->toggleFullScreen = false;
-        }
-    } break;
-    case SDL_SCANCODE_ESCAPE: {
-        input->escapeFullScreen = isDown;
-    } break;
-        
-    case SDL_SCANCODE_0: 
-    case SDL_SCANCODE_1:   
-    case SDL_SCANCODE_2:   
-    case SDL_SCANCODE_3:   
-    case SDL_SCANCODE_4:   
-    case SDL_SCANCODE_5:   
-    case SDL_SCANCODE_6:   
-    case SDL_SCANCODE_7:   
-    case SDL_SCANCODE_8:   
-    case SDL_SCANCODE_9: {
-        input->slotToRestoreOrSave = (key == SDL_SCANCODE_0) ? 0 : (key - SDL_SCANCODE_1 + 1);
+    case SDLK_0: 
+    case SDLK_1:   
+    case SDLK_2:   
+    case SDLK_3:   
+    case SDLK_4:   
+    case SDLK_5:   
+    case SDLK_6:   
+    case SDLK_7:   
+    case SDLK_8:   
+    case SDLK_9: {
+        input->slotToRestoreOrSave = (key == SDLK_0) ? 0 : (key - SDLK_1 + 1);
         if (isCtrlDown) {
             input->saveState = isDown;
         }
         else {
             input->restoreState = isDown;
         }
-               
     } break;
-        
-    case SDL_SCANCODE_LEFT:  {
-        input->rewindState = isDown;
+    case SDLK_ESCAPE: {
+        input->escapeFullScreen = isDown;
     } break;
-        
+    case SDLK_KP_ENTER:
+    case SDLK_RETURN: {
+       input->enterPressed = isDown; 
+    } break;
     default:
         //do nothing
         break;
@@ -384,47 +364,11 @@ static void processKey(SDL_Scancode key, bool isDown, bool isCtrlDown, Input::St
 }
 
 
-static void processButton(SDL_GameControllerButton button, bool isDown, Input::State *input) {
-    switch (button) {
-    case SDL_CONTROLLER_BUTTON_A: {
-        input->a = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_B: {
-        input->b = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_DPAD_UP: {
-        input->up = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: {
-        input->down = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: {
-        input->left = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: {
-        input->right = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_START: {
-        input->start = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_BACK: {
-        input->select = isDown;
-    } break;
-        
-    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: {
-       input->rewindState = isDown; 
-    } break;
-
-    default:
-        //do nothing
-        break;
+static void processButton(SDL_GameControllerButton button, bool isDown, Input::State *input, const InputMappingConfig *config) {
+    foriarr (config->controlCodeMappings) {
+        if (button == config->controlCodeMappings[i].buttonCode) {
+            input->actionsHit[i] = isDown;
+        }
     }
 }
 
@@ -834,8 +778,46 @@ static bool backupCartRAMFile(const char *fileNameToBackup, const char *extensio
     return true;
 }
 
-static bool doConfigFileParsing() {
-    auto result = parseConfigFile(".." FILE_SEPARATOR GBEMU_CONFIG_FILENAME); 
+static bool handleInputMappingFromConfig(InputMapping *mapping, LHS *lhs, RHS *rhs) {
+    switch (rhs->rhsType) {
+    case RHSType::ControllerMapping: {
+        mapping->buttonCode = controllerMappingToSDLButton[(int)rhs->controllerMapping.value];
+    } break;
+    case RHSType::KeyMapping: {
+        if (rhs->keyMapping.isCtrlHeld) {
+            switch (rhs->keyMapping.type) {
+            case KeyMappingType::Character: {
+               mapping->commandCode = rhs->keyMapping.characterValue; 
+            } break;
+            case KeyMappingType::MovementKey: {
+                SDL_Keycode sdlCode = movementKeyMappingToSDLKeyCode[(int)rhs->keyMapping.movementKeyValue]; 
+                mapping->commandCode = sdlCode;
+            } break;
+            }
+        }
+        else {
+            switch (rhs->keyMapping.type) {
+            case KeyMappingType::Character: {
+                mapping->keyCode = rhs->keyMapping.characterValue; 
+            } break;
+            case KeyMappingType::MovementKey: {
+                SDL_Keycode sdlCode = movementKeyMappingToSDLKeyCode[(int)rhs->keyMapping.movementKeyValue]; 
+                mapping->keyCode = sdlCode; 
+            } break;
+            }
+        }
+    } break;
+    default: {
+        ALERT_EXIT("Option at line: %d, column %d in %s must be bound to a controller or key mapping.", lhs->line, lhs->posInLine, GBEMU_CONFIG_FILENAME);
+        return false;
+    } break;
+    }
+    return true;
+
+}
+
+static bool doConfigFileParsing(const char *configFilePath, ProgramState *programState) {
+    auto result = parseConfigFile(configFilePath); 
     switch (result.fsResultCode) {
     case FileSystemResultCode::OK:  {
         //do nothing and continue 
@@ -844,49 +826,35 @@ static bool doConfigFileParsing() {
         freeParserResult(&result);
         
         profileStart("Save new file", profileState);
-        auto writeResult = writeDataToFile(defaultConfigFileContents, sizeof(defaultConfigFileContents) - 1, GBEMU_CONFIG_FILE_PATH);
+        auto writeResult = writeDataToFile(defaultConfigFileContents, sizeof(defaultConfigFileContents) - 1, configFilePath);
         switch (writeResult) {
         case FileSystemResultCode::OK: {
-           //continue 
+            //continue 
         } break;
         default: {
-           ALERT_EXIT("Failed to save default config file. Reason: %s.", resultCodeToString[(int)writeResult]); 
-           return false;
+            buf_free(configFilePath);
+            ALERT_EXIT("Failed to save default config file. Reason: %s.", resultCodeToString[(int)writeResult]); 
+            return false;
         } break;
         }
         profileEnd(profileState);
-
-        profileStart("Parse new config file", profileState); 
-        result = parseConfigFile(GBEMU_CONFIG_FILE_PATH); 
         
+        profileStart("Parse new config file", profileState); 
+        result = parseConfigFile(configFilePath); 
+
         switch (result.fsResultCode) {
         case FileSystemResultCode::OK:  {
             //do nothing and continue 
         } break;
-            
+
         default: {
             ALERT_EXIT("Failed to read the newly created" GBEMU_CONFIG_FILENAME " file. Reason: %s.",  resultCodeToString[(int)result.fsResultCode]);
             return false;
         } break;
         }
-        
-        switch (result.status) {
-        case ParserStatus::OK: {
-            //do nothing and continue 
-        } break;
-            
-        case ParserStatus::UnexpectedToken: {
-           ALERT_EXIT("Unexpected token in %s on line %d at column %d.", GBEMU_CONFIG_FILENAME, result.errorLine, result.errorColumn);
-           return false;
-        } break;
-        }
-        
-        fori (result.numConfigPairs) {
-          ConfigPair *cp = result.configPairs + i;  
-          
-        }
-        
+
         profileEnd(profileState);
+
     } break;
     default: {
        ALERT_EXIT("Failed to read " GBEMU_CONFIG_FILENAME ". Reason: %s.",  resultCodeToString[(int)result.fsResultCode]);
@@ -894,6 +862,62 @@ static bool doConfigFileParsing() {
     } break;
     }
     
+    switch (result.status) {
+    case ParserStatus::OK: {
+        //do nothing and continue 
+    } break;
+
+        //TODO
+        
+    }
+    
+    fori (result.numConfigPairs) {
+#define CASE_MAPPING(mapping)  case LHSValue::mapping: {\
+            if (!handleInputMappingFromConfig(&programState->input.inputMappingConfig.mapping##Mapping, &cp->lhs, &cp->rhs)) {\
+               return false;\
+            }\
+        } break
+        
+        ConfigPair *cp = result.configPairs + i;  
+        switch (cp->lhs.value) {
+        CASE_MAPPING(Start);
+        CASE_MAPPING(Select);
+        CASE_MAPPING(A);
+        CASE_MAPPING(B);
+        CASE_MAPPING(Up);
+        CASE_MAPPING(Down);
+        CASE_MAPPING(Left);
+        CASE_MAPPING(Right);
+        CASE_MAPPING(Pause);
+        CASE_MAPPING(Mute);
+        CASE_MAPPING(ShowDebugger);
+        CASE_MAPPING(ShowHomePath);
+        CASE_MAPPING(Rewind);
+        CASE_MAPPING(Step);
+        CASE_MAPPING(Continue);
+        CASE_MAPPING(Reset);
+        CASE_MAPPING(FullScreen);
+        case LHSValue::ScreenScale: {
+           switch (cp->rhs.rhsType) {
+           case RHSType::Integer: {
+              programState->screenScale = cp->rhs.intValue; 
+              //TODO: validate screen scale
+           } break;
+           default:  {
+               ALERT_EXIT("Screen Scale at line: %d, column %d in %s must be bound to a controller or key mapping.", 
+                          cp->lhs.line, cp->lhs.posInLine, GBEMU_CONFIG_FILENAME);
+               return false;
+           } break;
+           }
+        } break;
+        }
+    }
+    
+    //set defaults
+    if (programState->screenScale <= 0) {
+        programState->screenScale = SCREEN_SCALE;
+    }
+
     freeParserResult(&result);
     return true;
 }
@@ -902,11 +926,6 @@ static void
 mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
          SDL_AudioDeviceID audioDeviceID, SDL_GameController **controller, const char *romFileName,
          bool shouldEnableDebugMode, DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug, ProgramState *programState) {
-#ifdef CO_PROFILE
-    profileState = &programState->profileState;
-#endif
-    //TODO: should we not be passing gbDebug in here?
-    //change to gbemu_config
     char filePath[MAX_PATH_LEN];
     
 #define GAME_LIB_PATH "gbemu.so"
@@ -1104,6 +1123,10 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                 ALERT_EXIT("Cannot create save files at (%s). Permission denied.", programState->romSpecificPath);
                 return;
             } break;
+            case FileSystemResultCode::AlreadyExists: {
+                ALERT_EXIT("A file already exists at %s. Please move or delete this file so GBEmu can use this path for save files.", programState->romSpecificPath);
+                return;
+            } break;
             default:  {
                 ALERT_EXIT("Cannot create save files at (%s).", programState->romSpecificPath);
                 return;
@@ -1129,15 +1152,6 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         /******************************************
          * Everything after here is relative to the rom directory!!
          *******************************************/
-        /*
-         * Parse Config file
-         */
-//        profileStart("Parse Config file", profileState);
-        
-//        if (!doConfigFileParsing()) {
-//            return;
-//        }
-//        profileEnd(profileState);
         if (mmu->hasBattery) {
             snprintf(filePath, ARRAY_LEN(filePath), "%s." CART_RAM_FILE_EXTENSION, programState->loadedROMName);
             
@@ -1353,18 +1367,19 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                     return;
 
                 case SDL_KEYDOWN: {
-                    processKey(e.key.keysym.scancode, true, (keyMod & CTRL_KEY) != 0, &input->newState);
+                    processKey(e.key.keysym.sym, true, (keyMod & CTRL_KEY) != 0, &input->newState, &input->inputMappingConfig);
                     
                 } break;
 
                 case SDL_KEYUP: {
-                    processKey(e.key.keysym.scancode, false, (keyMod & CTRL_KEY) != 0, &input->newState);
+                    processKey(e.key.keysym.sym, false, (keyMod & CTRL_KEY) != 0, &input->newState, &input->inputMappingConfig);
                 } break;
 
                 case SDL_CONTROLLERBUTTONUP:  
                 case SDL_CONTROLLERBUTTONDOWN:  {
                     if (*controller && e.cbutton.which == controllerID) {
-                        processButton((SDL_GameControllerButton)e.cbutton.button, e.type == SDL_CONTROLLERBUTTONDOWN, &input->newState);
+                        processButton((SDL_GameControllerButton)e.cbutton.button, e.type == SDL_CONTROLLERBUTTONDOWN, &input->newState, 
+                                      &input->inputMappingConfig);
                     }
                     
                 } break;
@@ -1374,35 +1389,35 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                         case SDL_CONTROLLER_AXIS_LEFTX: {
                             input->newState.xAxis = e.caxis.value;
                             if (e.caxis.value < ANALOG_STICK_DEADZONE && e.caxis.value > -ANALOG_STICK_DEADZONE) {
-                                input->newState.left = false;
-                                input->newState.right = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->inputMappingConfig);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->inputMappingConfig);
                             }
                             else if (e.caxis.value >= ANALOG_STICK_DEADZONE && 
                                      e.caxis.value > abs(input->newState.yAxis)) {
-                                input->newState.right = true;
-                                input->newState.left = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->inputMappingConfig);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, true, &input->newState, &input->inputMappingConfig);
                             }
                             else if (e.caxis.value <= -ANALOG_STICK_DEADZONE && 
                                      abs(e.caxis.value) > abs(input->newState.yAxis)) {
-                                input->newState.left = true;
-                                input->newState.right = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, true, &input->newState, &input->inputMappingConfig);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->inputMappingConfig);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_LEFTY: {
                             input->newState.yAxis = e.caxis.value;
                             if (e.caxis.value < ANALOG_STICK_DEADZONE && e.caxis.value > -ANALOG_STICK_DEADZONE) {
-                                input->newState.up = false;
-                                input->newState.down = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->inputMappingConfig);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->inputMappingConfig);
                             }
                             else if (e.caxis.value >= ANALOG_STICK_DEADZONE && 
                                      e.caxis.value > abs(input->newState.xAxis)) {
-                                input->newState.down = true;
-                                input->newState.up = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->inputMappingConfig);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true, &input->newState, &input->inputMappingConfig);
                             }
                             else if (e.caxis.value <= -ANALOG_STICK_DEADZONE && 
                                      abs(e.caxis.value) > abs(input->newState.xAxis)) {
-                                input->newState.up = true;
-                                input->newState.down = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, true, &input->newState, &input->inputMappingConfig);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->inputMappingConfig);
                             }
                         } break;
                         }
@@ -1486,14 +1501,14 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                 }
             }
 
-            if (input->newState.debugOn && !input->oldState.debugOn && !gbDebug->isEnabled && !programState->isFullScreen) {
+            if (input->newState.ShowDebugger && !input->oldState.ShowDebugger && !gbDebug->isEnabled && !programState->isFullScreen) {
                 int windowX, windowY;
                 SDL_GetWindowPosition(window, &windowX, &windowY);
                 if (initDebugger(debuggerContext, gbDebug, programState, windowX, windowY)) {
                     gbDebug->isEnabled = true;
                 }
             }
-            if (input->newState.toggleFullScreen && !input->oldState.toggleFullScreen) {
+            if (input->newState.FullScreen && !input->oldState.FullScreen) {
                 if (programState->isFullScreen) {
                     if (SDL_SetWindowFullscreen(window, 0) == 0) {
                         SDL_ShowCursor(true);
@@ -1699,6 +1714,7 @@ int main(int argc, char **argv) {
     const char *gbEmuHomePath; 
     char homePathConfigFilePath[MAX_PATH_LEN] = {};
     bool isHomePathValid = false;
+    char *configFilePath = nullptr;
     {
         if (!initMemory(GENERAL_MEMORY_SIZE + FILE_MEMORY_SIZE, GENERAL_MEMORY_SIZE)) {
             //Do not use ALERT since it uses general memory which failed to init
@@ -1710,8 +1726,10 @@ int main(int argc, char **argv) {
 
     }
 
-
     profileInit(&programState->profileState);
+#ifdef CO_PROFILE
+    profileState = &programState->profileState;
+#endif
 
     gbEmuHomePath = getenv(HOME_PATH_ENV_VARIABLE);
     if (gbEmuHomePath) {
@@ -1823,7 +1841,17 @@ int main(int argc, char **argv) {
         }
         }
     }
-    
+    /**********************
+     * Parse Config file
+     *********************/
+    profileStart("Parse Config file", profileState);
+    configFilePath = nullptr;
+    buf_printf(configFilePath, "%s" FILE_SEPARATOR GBEMU_CONFIG_FILENAME, programState->homeDirectoryPath);
+    if (!doConfigFileParsing(configFilePath, programState)) {
+        return 1;
+    }
+    buf_free(configFilePath);
+    profileEnd(profileState);
     
     //ROMs dir
     buf_printf(romsDir, "%s" FILE_SEPARATOR "ROMs" FILE_SEPARATOR,programState->homeDirectoryPath);
@@ -1855,9 +1883,8 @@ int main(int argc, char **argv) {
 	}
     buf_free(romsDir);
 
-    window =
-            SDL_CreateWindow("GB Emu", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                             WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+    window = SDL_CreateWindow("GB Emu", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                             SCREEN_WIDTH*programState->screenScale, SCREEN_HEIGHT*programState->screenScale, SDL_WINDOW_SHOWN);
 
     if (!window) {
         ALERT("Could not create window. Reason %s", SDL_GetError());
