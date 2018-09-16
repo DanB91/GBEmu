@@ -19,8 +19,10 @@ struct Token {
 
 static Token currentToken;
 static char *stream;
-static int currentLine = 1;
+static int currentLineNumber = 1;
 static int currentPosInLine = 1;
+static char *currentLine;
+static char *previousLine;
 
 static inline bool isIdentifierChar(char c) {
     return isalpha(c) || c == '_';
@@ -50,8 +52,8 @@ static bool areStringsEqualCaseInsenstive(const char *l, const char *r, i64 ln, 
 
 
 static void nextToken() {
-    repeat:
-    currentToken.line = currentLine;
+repeat:
+    currentToken.line = currentLineNumber;
     currentToken.posInLine = currentPosInLine;
     
     if (*stream == '\0') {
@@ -66,12 +68,16 @@ static void nextToken() {
     }
     else if (isNewLineChar(*stream)) {
         currentToken.type = TokenType::NewLine;
+        currentToken.value.data = stream;
+        currentToken.value.len = 1;
         while (*stream != '\0' && isspace(*stream))  {
             switch (*stream) {
             case '\n':
                 stream++; 
                 currentPosInLine = 1;
-                currentLine++;
+                currentLineNumber++;
+                previousLine = currentLine;
+                currentLine = stream;
                 break;
             case '\r':
                 stream++;
@@ -79,7 +85,9 @@ static void nextToken() {
                     stream++;
                 }
                 currentPosInLine = 1;
-                currentLine++;
+                currentLineNumber++;
+                previousLine = currentLine;
+                currentLine = stream;
                 break;
             default:
                 stream++;
@@ -106,6 +114,8 @@ static void nextToken() {
     }
     else if (tolower(stream[0]) == 'k' && tolower(stream[1]) == 'e' && stream[2] == 'y') {
        currentToken.type = TokenType::KeyKW;
+       currentToken.value.data = stream;
+       currentToken.value.len = 3;
        stream += 3;
        currentPosInLine += 3;
     }
@@ -113,6 +123,8 @@ static void nextToken() {
              tolower(stream[3]) == 't' && tolower(stream[4]) == 'r' && tolower(stream[5]) == 'o' &&
              tolower(stream[6]) == 'l' && tolower(stream[7]) == 'l' && tolower(stream[8]) == 'e' && tolower(stream[9]) == 'r') {
        currentToken.type = TokenType::ControllerKW;
+       currentToken.value.data = stream;
+       currentToken.value.len = 10;
        stream += 10 ;
        currentPosInLine += 10;
     }
@@ -120,6 +132,8 @@ static void nextToken() {
              tolower(stream[3]) == 'm' && tolower(stream[4]) == 'a' && tolower(stream[5]) == 'n' &&
              tolower(stream[6]) == 'd' && tolower(stream[7]) == '-' ) {
        currentToken.type = TokenType::CtrlKW;
+       currentToken.value.data = stream;
+       currentToken.value.len = 8;
        stream += 8 ;
        currentPosInLine += 8;
                 
@@ -127,6 +141,8 @@ static void nextToken() {
     else if (tolower(stream[0]) == 'c' && tolower(stream[1]) == 't' && tolower(stream[2]) == 'r' && 
              tolower(stream[3]) == 'l' && tolower(stream[4]) == '-') {
        currentToken.type = TokenType::CtrlKW;
+       currentToken.value.data = stream;
+       currentToken.value.len = 5;
        stream += 5;
        currentPosInLine += 5;
     }
@@ -143,16 +159,35 @@ static void nextToken() {
     }
     else if (*stream == '=') {
         currentToken.type = TokenType::Equals; 
+        currentToken.value.data = stream;
+        currentToken.value.len = 1;
         stream++;
         currentPosInLine++;
     }
     else {
+        u8 leadByte = (u8)*stream;
         currentToken.value.data = stream;
-        //TODO: support utf-8
-        currentToken.value.len = 1;
+        int byteLen;
+        if ((leadByte & 0xC0) == 0xC0) {
+            byteLen = 0;
+            while (leadByte & 0x80) {
+                leadByte <<= 1; 
+                stream++;
+                if (*stream == '\0') {
+                    break;
+                }
+                byteLen++;
+            }
+        }
+        else {
+            byteLen = 1;
+            stream++;
+        }
+        //TODO: invalid byte TokenType for bad bytes
+        
+        currentToken.value.len = byteLen;
         
         currentToken.type = TokenType::Other;
-        stream++;
         currentPosInLine++;
     }
     
@@ -184,7 +219,7 @@ static int createIntFromCurrentToken() {
 
 static ParserStatus controllerMapping(ControllerMapping *outControllerMapping) {
     outControllerMapping->posInLine = currentPosInLine;
-    outControllerMapping->line = currentLine;
+    outControllerMapping->line = currentLineNumber;
     switch (currentToken.type) {
     case TokenType::Identifier:  {
         if (CMP_STR("a")) {
@@ -237,7 +272,7 @@ static ParserStatus controllerMapping(ControllerMapping *outControllerMapping) {
         }
     } break;
     default:  {
-        return ParserStatus::BadControllerMappingToken; 
+        return ParserStatus::UnrecognizedControllerMapping; 
     } break;
     }
     
@@ -245,7 +280,7 @@ static ParserStatus controllerMapping(ControllerMapping *outControllerMapping) {
 }
 static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
     outKeyMapping->posInLine = currentPosInLine;
-    outKeyMapping->line = currentLine;
+    outKeyMapping->line = currentLineNumber;
     
     if (currentToken.type == TokenType::CtrlKW) {
        outKeyMapping->isCtrlHeld = true; 
@@ -304,7 +339,7 @@ static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
         return ParserStatus::NumberKeyMappingNotAllowed;
     } break;
     default:  {
-        return ParserStatus::BadKeyMappingToken; 
+            return ParserStatus::UnrecognizedKeyMapping;
     } break;
     }
     
@@ -345,6 +380,8 @@ static ParserStatus rhs(RHS *outRHS) {
 }
 
 static ParserStatus lhs(LHS *outLHS) {
+    while (accept(TokenType::NewLine)) 
+        ;
     outLHS->line = currentToken.line;
     outLHS->posInLine = currentToken.posInLine;
     if (isToken(TokenType::Identifier)) {
@@ -409,7 +446,7 @@ static ParserStatus lhs(LHS *outLHS) {
         nextToken();
     }
     else {
-        return ParserStatus::BadLHSToken;
+        return ParserStatus::BadTokenStartOfLine;
     }
     
     
@@ -418,8 +455,6 @@ static ParserStatus lhs(LHS *outLHS) {
 
 static ParserStatus pair(ConfigPair **outputPairs) {
     ConfigPair configPair;
-    while (accept(TokenType::NewLine)) 
-        ;
     
     auto res = lhs(&configPair.lhs);
     if (res != ParserStatus::OK) {
@@ -436,7 +471,7 @@ static ParserStatus pair(ConfigPair **outputPairs) {
     }
     
     if (!accept(TokenType::NewLine) && !accept(TokenType::End)) {
-        return ParserStatus::UnexpectedToken;
+        return ParserStatus::ExtraneousToken;
     }
     
     buf_push(*outputPairs, configPair);
@@ -457,7 +492,7 @@ ParserResult parseConfigFile(const char *fileName) {
     }
     
     currentToken.type = TokenType::Begin;
-    stream = (char*)fileResult.data;
+    stream = currentLine = (char*)fileResult.data;
     RESIZEM(stream, fileResult.size + 1, char);
     stream[fileResult.size] = '\0';
     nextToken();
@@ -467,14 +502,37 @@ ParserResult parseConfigFile(const char *fileName) {
         switch (res) {
         case ParserStatus::OK:
             break;
-        default:
-            ret.errorLine = currentToken.line;
+        default: {
+            ret.errorLineNumber = currentToken.line;
             ret.errorColumn = currentToken.posInLine;
-            ret.status = res;
+            if (currentToken.type != TokenType::NewLine) {
+                ret.errorToken = currentToken.value.data;
+                ret.errorLine = currentLine;
+                ret.stringAfterErrorToken = ret.errorToken + currentToken.value.len;
+                {
+                    char *tmp = currentLine;
+                    while (!isNewLineChar(*tmp) && *tmp != '\0') {
+                        tmp++;
+                    }
+                    if (isNewLineChar(*tmp)) {
+                        *tmp++ = ' ';
+                    }
+                    *tmp = '\0';
+                    ret.errorLineLen = tmp - currentLine;
+                    ret.errorLineLen--; //minus out '\0'
+                }
+                ret.status = res;
+            }
+            else {
+                *currentToken.value.data = '\0';
+                ret.errorLine = previousLine;
+                ret.status = ParserStatus::UnexpectedNewLine;
+            }
             return ret;
+        } break;
         }
     }
-    
+
     ret.numConfigPairs = (i64)buf_len(ret.configPairs);
     ret.status = ParserStatus::OK;
     ret.stream = stream;

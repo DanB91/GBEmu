@@ -815,6 +815,29 @@ static bool handleInputMappingFromConfig(InputMapping *mapping, LHS *lhs, RHS *r
     return true;
 
 }
+static void showConfigError(const char *message,  const ParserResult *result) {
+    char *errorLine = PUSHMCLR(result->errorLineLen + 5, char);
+    isize errorTokenLen = result->stringAfterErrorToken - result->errorToken;
+    char *errorToken = PUSHMCLR(errorTokenLen + 1, char);
+    strncpy(errorToken, result->errorToken, (usize)errorTokenLen); 
+    
+    CO_ERR("%zd", (result->errorToken - result->errorLine));
+    char *tmp = strncpy(errorLine, result->errorLine, (usize)(result->errorToken - result->errorLine));
+    CO_ASSERT_EQ(result->errorToken - result->errorLine, (isize)strlen(tmp));
+    tmp += result->errorToken - result->errorLine;
+    *tmp++ = '<';
+    *tmp++ = '<';
+    strncpy(tmp, errorToken, (usize)errorTokenLen); 
+    CO_ASSERT_EQ(result->stringAfterErrorToken - result->errorToken, (isize)strlen(tmp));
+    tmp += errorTokenLen;
+    *tmp++ = '>';
+    *tmp++ = '>';
+    strncpy(tmp, result->stringAfterErrorToken, (usize)(result->errorLine + result->errorLineLen - result->stringAfterErrorToken ));
+    CO_ASSERT_EQ(strlen(result->errorLine) + 3, strlen(errorLine));
+    //ALERT_EXIT has a space before "Exiting...", so we will just hard code it here. 
+    ALERT("Invalid value '%s' in %s on line %d -- %s." ENDL ENDL "%s" ENDL ENDL "Exiting...", errorToken, GBEMU_CONFIG_FILENAME, result->errorLineNumber, message, errorLine);
+    POPM(errorLine);
+}
 
 static bool doConfigFileParsing(const char *configFilePath, ProgramState *programState) {
     auto result = parseConfigFile(configFilePath); 
@@ -862,14 +885,30 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     } break;
     }
     
+#define CASE_ERROR(errCase, msg) case ParserStatus::errCase: {\
+       showConfigError(msg, &result);\
+       return false;\
+} break
+    
     switch (result.status) {
     case ParserStatus::OK: {
         //do nothing and continue 
     } break;
-
-        //TODO
-        
+    CASE_ERROR(BadTokenStartOfLine, "Invalid config option");
+    CASE_ERROR(BadRHSToken, "Invalid config value");
+    CASE_ERROR(UnknownLHSConfig, "Unrecognized config option");
+    CASE_ERROR(UnrecognizedKeyMapping, "Unrecognized key to map to");
+    CASE_ERROR(NumberKeyMappingNotAllowed, "Mapping to a number key is not supported");
+    CASE_ERROR(UnrecognizedControllerMapping, "Unrecognized controller button to map to");
+    CASE_ERROR(MissingEquals, "Equals sign expected here");
+    CASE_ERROR(ExtraneousToken, "Extraneous token; new line expected");
+    case ParserStatus::UnexpectedNewLine: {
+        ALERT("Unexpected new line in %s on line %d:" ENDL ENDL "%s" ENDL ENDL "Exiting...", 
+              GBEMU_CONFIG_FILENAME, result.errorLineNumber, result.errorLine);
+        return false;
+    } break;
     }
+#undef CASE_ERROR
     
     fori (result.numConfigPairs) {
 #define CASE_MAPPING(mapping)  case LHSValue::mapping: {\
@@ -900,24 +939,29 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
         case LHSValue::ScreenScale: {
            switch (cp->rhs.rhsType) {
            case RHSType::Integer: {
-              programState->screenScale = cp->rhs.intValue; 
-              //TODO: validate screen scale
+              int screenScale = cp->rhs.intValue; 
+              //validate screenScale
+              if (screenScale <= 0) {
+                  ALERT_EXIT("Screen Scale at line: %d, column %d in %s must be bound to a number greater than 0.", 
+                             cp->lhs.line, cp->lhs.posInLine, GBEMU_CONFIG_FILENAME);
+                  return false;
+              }
+              programState->screenScale = screenScale;
            } break;
            default:  {
-               ALERT_EXIT("Screen Scale at line: %d, column %d in %s must be bound to a controller or key mapping.", 
+               ALERT_EXIT("Screen Scale at line: %d, column %d in %s must be bound to a number greater than 0.", 
                           cp->lhs.line, cp->lhs.posInLine, GBEMU_CONFIG_FILENAME);
                return false;
            } break;
            }
         } break;
         }
+#undef CASE_MAPPING
     }
     
-    //set defaults
-    if (programState->screenScale <= 0) {
-        programState->screenScale = SCREEN_SCALE;
-    }
-
+    //defaults
+    //TODO
+    
     freeParserResult(&result);
     return true;
 }
@@ -932,13 +976,10 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
     char gbemuCodePath[MAX_PATH_LEN];
     //used for hot loading
     getCurrentWorkingDirectory(gbemuCodePath);
-    snprintf(gbemuCodePath, MAX_PATH_LEN, "%s/%s", gbemuCodePath, GAME_LIB_PATH);
+    strncat(gbemuCodePath, FILE_SEPARATOR GAME_LIB_PATH, MAX_PATH_LEN);
 #undef GAME_LIB_PATH
     
-
-
     SDL_PauseAudioDevice(audioDeviceID, 0);
-
 
     bool isRunning = true;
     bool isPaused = false;
@@ -1883,7 +1924,7 @@ int main(int argc, char **argv) {
 	}
     buf_free(romsDir);
 
-    window = SDL_CreateWindow("GB Emu", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+    window = SDL_CreateWindow("GBEmu", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                              SCREEN_WIDTH*programState->screenScale, SCREEN_HEIGHT*programState->screenScale, SDL_WINDOW_SHOWN);
 
     if (!window) {
@@ -1898,6 +1939,56 @@ int main(int argc, char **argv) {
         goto exit;
     }
     
+    //Check to see if screen scale is too big
+    {
+        int windowW, windowH, windowX, windowY, displayIndex; 
+        SDL_DisplayMode mode;
+        if ((displayIndex = SDL_GetWindowDisplayIndex(window)) < 0) {
+            ALERT_EXIT("Could not get display index. Reason %s", SDL_GetError());
+            goto exit;
+        }
+        
+        if (SDL_GetCurrentDisplayMode(displayIndex, &mode)) {
+            ALERT_EXIT("Could not get display mode. Reason %s", SDL_GetError());
+            goto exit;
+        }
+        int displayW = mode.w, displayH = mode.h; 
+        
+        SDL_GetWindowPosition(window, &windowX, &windowY);       
+        SDL_GetWindowSize(window, &windowW, &windowH);
+        
+        
+        CO_ERR("Display %d, %d", displayW, displayH);
+        CO_ERR("Window %d, %d", windowW, windowH);
+        
+        if (windowW > displayW || windowH > displayH) {
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+            int originalScreenScale = programState->screenScale;
+            do {
+                programState->screenScale--;
+            } while (SCREEN_WIDTH*programState->screenScale > displayW || SCREEN_HEIGHT*programState->screenScale > displayH);
+            
+            ALERT("The GBEmu window is too big for your display.  We have shrank the window size from %d times to %d times the scale of the GameBoy screen.",
+                  originalScreenScale, programState->screenScale);
+
+            window = SDL_CreateWindow("GBEmu", windowX, windowY,
+                                      SCREEN_WIDTH*programState->screenScale, SCREEN_HEIGHT*programState->screenScale, SDL_WINDOW_SHOWN);
+
+            if (!window) {
+                ALERT("Could not create window. Reason %s", SDL_GetError());
+                goto exit;
+            }
+
+            renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+
+            if (!renderer) {
+                ALERT("Could not init renderer. Reason %s", SDL_GetError());
+                goto exit;
+            }
+        }
+    }
+
     screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, 
                                       SCREEN_WIDTH, SCREEN_HEIGHT);
     

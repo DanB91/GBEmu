@@ -5,15 +5,14 @@
 enum class ParserStatus {
     OK = 0,
     BadRHSToken,
-    BadLHSToken,
+    BadTokenStartOfLine,
     UnknownLHSConfig,
-    BadKeyMappingToken,
     NumberKeyMappingNotAllowed,
-    BadControllerMappingToken,
     MissingEquals,
-    UnexpectedToken,
+    ExtraneousToken,
     UnrecognizedKeyMapping,
-    UnrecognizedControllerMapping
+    UnrecognizedControllerMapping,
+    UnexpectedNewLine
 };
 
 enum class LHSValue{
@@ -86,9 +85,18 @@ struct ConfigPair {
 struct ParserResult {
     //check this first
     FileSystemResultCode fsResultCode;
-    int errorLine;
-    int errorColumn;
     ParserStatus status;
+    
+    const char *errorLine;
+    isize errorLineLen;
+    int errorLineNumber;
+    int errorColumn;
+    
+    //These 2 members are not applicable to ParserStatus::UnexpectedNewLine
+    char *errorToken;
+    //character after the end
+    char *stringAfterErrorToken;
+    
     ConfigPair *configPairs;
     i64 numConfigPairs;
     

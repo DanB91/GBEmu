@@ -93,6 +93,8 @@ typedef void (TimerFn)(void*);
             BREAKPOINT();\
         }\
 } while(0)
+#define CO_ASSERT_EQ(expected,actual) CO_ASSERT_MSG((expected) == (actual),\
+    "Expected: %zd, Actual %zd", expected, actual);
 
 #ifdef UNIX
 #define CO_LOG(format, ...) do { double now = nowInSeconds();\
@@ -115,6 +117,7 @@ typedef void (TimerFn)(void*);
 #else 
 #define CO_ASSERT(...)
 #define CO_ASSERT_MSG(...)
+#define CO_ASSERT_EQ(expected,actual)
 #define CO_LOG(...) 
 #define INVALID_CODE_PATH()
 #ifdef __APPLE__

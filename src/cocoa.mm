@@ -43,4 +43,3 @@ bool openDirectoryAtPath(const char *path, char *outPath) {
         return false;
     }
 }
-
