@@ -48,7 +48,11 @@ typedef uint16_t u16;
 typedef uint8_t u8;
 
 typedef size_t usize;
+#ifdef WINDOWS
+typedef ptrdiff_t isize;
+#else
 typedef ssize_t isize;
+#endif
 
 //millisecond time
 typedef i64 TimeMS;
@@ -1688,7 +1692,7 @@ error:
     return ret;
 
 }
-FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName) {
+FileSystemResultCode writeDataToFile(const void *data, isize size, const char *fileName) {
 	wchar_t fileNameWide[MAX_PATH + 1];
 
 	if (!convertUTF8ToWChar(fileName, fileNameWide, MAX_PATH)) {

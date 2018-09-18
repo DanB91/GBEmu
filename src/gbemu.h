@@ -12,7 +12,7 @@
 
 #define SCREEN_WIDTH 160
 #define SCREEN_HEIGHT 144
-#define SCREEN_SCALE 4
+#define DEFAULT_SCREEN_SCALE 4
 
 #define TILE_WIDTH  8
 #define TILE_HEIGHT  8
@@ -482,11 +482,15 @@ struct NotificationState {
 };
 struct GameBoyDebug;
 
-#define NO_MAPPING -1
+#define NO_INPUT_MAPPING -1
 struct InputMapping {
-    int keyCode = NO_MAPPING;
-    int buttonCode = NO_MAPPING;  
-    int commandCode = NO_MAPPING;
+    int keyCode = NO_INPUT_MAPPING;
+    int buttonCode = NO_INPUT_MAPPING;  
+    int commandCode = NO_INPUT_MAPPING;
+    
+    InputMapping(int keyCode, int buttonCode, int commandCode)
+        :keyCode(keyCode), buttonCode(buttonCode), commandCode(commandCode)
+    {}
 };
 
 union InputMappingConfig {
@@ -498,7 +502,7 @@ union InputMappingConfig {
         InputMapping PauseMapping, ResetMapping, ShowDebuggerMapping, ShowHomePathMapping;
         InputMapping FullScreenMapping;
     };
-    InputMapping controlCodeMappings[17];
+    InputMapping inputMappings[17];
 };
 
 struct Input {

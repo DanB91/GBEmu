@@ -20,7 +20,7 @@ enum class LHSValue{
     A, B, Start, Select, Rewind,
     Step, Continue, Mute,
     ScreenScale, Pause, ShowDebugger,
-    Reset, ShowHomePath, FullScreen
+    Reset, ShowHomePath, FullScreen,
 };
 
 //non null terminated

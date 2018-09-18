@@ -86,24 +86,62 @@
 
 #define DEFAULT_KEY_REWIND SDLK_LEFT
 #define DEFAULT_CONTROLLER_REWIND SDL_CONTROLLER_BUTTON_LEFTSHOULDER
-
-#define DEFAULT_KEY_MUTE SDLK_m
-#define DEFAULT_CONTROLLER_MUTE NO_INPUT_MAPPING
-
-#define DEFAULT_KEY_PAUSE SDLK_p
-#define DEFAULT_CONTROLLER_PAUSE NO_INPUT_MAPPING
-
-#define DEFAULT_KEY_STEP SDLK_n
-#define DEFAULT_CONTROLLER_STEP NO_INPUT_MAPPING
-
+    
 #define DEFAULT_KEY_CONTINUE SDLK_c
 #define DEFAULT_CONTROLLER_CONTINUE NO_INPUT_MAPPING
 
+#define DEFAULT_KEY_STEP SDLK_n
+#define DEFAULT_CONTROLLER_STEP NO_INPUT_MAPPING
+    
+#define DEFAULT_KEY_MUTE SDLK_m
+#define DEFAULT_CONTROLLER_MUTE NO_INPUT_MAPPING
+    
+#define DEFAULT_KEY_PAUSE SDLK_p
+#define DEFAULT_CONTROLLER_PAUSE NO_INPUT_MAPPING
+
+#define DEFAULT_KEY_RESET SDLK_r
+#define DEFAULT_CONTROLLER_RESET NO_INPUT_MAPPING
+
+#define DEFAULT_KEY_SHOW_DEBUGGER SDLK_b
+#define DEFAULT_CONTROLLER_SHOW_DEBUGGER NO_INPUT_MAPPING
+    
+#define DEFAULT_KEY_SHOW_HOME_PATH SDLK_h
+#define DEFAULT_CONTROLLER_SHOW_HOME_PATH NO_INPUT_MAPPING
+    
+#define DEFAULT_KEY_FULL_SCREEN SDLK_f
+#define DEFAULT_CONTROLLER_FULL_SCREEN NO_INPUT_MAPPING
+    
 #ifdef MAC 
 #   define CTRL "Command-"
 #else
 #   define CTRL "Ctrl-"
 #endif
+
+//    InputMapping LeftMapping, RightMapping, UpMapping, DownMapping;
+//    InputMapping AMapping, BMapping, StartMapping, SelectMapping;
+
+//    InputMapping RewindMapping, ContinueMapping, StepMapping, MuteMapping;
+//    InputMapping PauseMapping, ResetMapping, ShowDebuggerMapping, ShowHomePathMapping;
+//    InputMapping FullScreenMapping;
+static const InputMapping defaultInputMappings[] = {
+    InputMapping(DEFAULT_KEY_LEFT, DEFAULT_CONTROLLER_LEFT, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_RIGHT, DEFAULT_CONTROLLER_RIGHT, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_UP, DEFAULT_CONTROLLER_UP, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_DOWN, DEFAULT_CONTROLLER_DOWN, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_A, DEFAULT_CONTROLLER_A, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_B, DEFAULT_CONTROLLER_B, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_START, DEFAULT_CONTROLLER_START, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_SELECT, DEFAULT_CONTROLLER_SELECT, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_REWIND, DEFAULT_CONTROLLER_REWIND, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_CONTINUE, DEFAULT_CONTROLLER_CONTINUE, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_STEP, DEFAULT_CONTROLLER_STEP, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_MUTE, DEFAULT_CONTROLLER_MUTE, NO_INPUT_MAPPING),
+    InputMapping(DEFAULT_KEY_PAUSE, DEFAULT_CONTROLLER_PAUSE, NO_INPUT_MAPPING),
+    InputMapping(NO_INPUT_MAPPING, DEFAULT_CONTROLLER_RESET, DEFAULT_KEY_RESET),
+    InputMapping(NO_INPUT_MAPPING, DEFAULT_CONTROLLER_SHOW_DEBUGGER, DEFAULT_KEY_SHOW_DEBUGGER),
+    InputMapping(NO_INPUT_MAPPING, DEFAULT_CONTROLLER_SHOW_HOME_PATH, DEFAULT_KEY_SHOW_HOME_PATH),
+    InputMapping(NO_INPUT_MAPPING, DEFAULT_CONTROLLER_FULL_SCREEN, DEFAULT_KEY_FULL_SCREEN)
+};
 
 static const char defaultConfigFileContents[] = 
         "//Keyboard Mappings" ENDL 
@@ -317,15 +355,15 @@ static HomeDirectoryOption showHomeDirectoryDialog(const char *defaultHomeDirPat
 
 static void processKey(SDL_Keycode key, bool isDown, bool isCtrlDown, Input::State *input, const InputMappingConfig *config) {
     if (isCtrlDown) {
-        foriarr (config->controlCodeMappings) {
-            if (key == config->controlCodeMappings[i].commandCode) {
+        foriarr (config->inputMappings) {
+            if (key == config->inputMappings[i].commandCode) {
                 input->actionsHit[i] = isDown;
             }
         }
     }
     else {
-        foriarr (config->controlCodeMappings) {
-            if (key == config->controlCodeMappings[i].keyCode) {
+        foriarr (config->inputMappings) {
+            if (key == config->inputMappings[i].keyCode) {
                 input->actionsHit[i] = isDown;
             }
         }
@@ -365,8 +403,8 @@ static void processKey(SDL_Keycode key, bool isDown, bool isCtrlDown, Input::Sta
 
 
 static void processButton(SDL_GameControllerButton button, bool isDown, Input::State *input, const InputMappingConfig *config) {
-    foriarr (config->controlCodeMappings) {
-        if (button == config->controlCodeMappings[i].buttonCode) {
+    foriarr (config->inputMappings) {
+        if (button == config->inputMappings[i].buttonCode) {
             input->actionsHit[i] = isDown;
         }
     }
@@ -417,27 +455,27 @@ static void renderDebuggerThread(void *arg) {
 
             //TODO: might have to do this update out of this thread
             if (tile.needsUpdate) {
-                u32 pixels[TILE_HEIGHT * SCREEN_SCALE * TILE_WIDTH * SCREEN_SCALE];
-                for (i64 y = 0; y < TILE_HEIGHT * SCREEN_SCALE; y+=SCREEN_SCALE) {
-                    for (i64 x = 0; x < TILE_WIDTH * SCREEN_SCALE; x+=SCREEN_SCALE) {
+                u32 pixels[TILE_HEIGHT * DEFAULT_SCREEN_SCALE * TILE_WIDTH * DEFAULT_SCREEN_SCALE];
+                for (i64 y = 0; y < TILE_HEIGHT * DEFAULT_SCREEN_SCALE; y+=DEFAULT_SCREEN_SCALE) {
+                    for (i64 x = 0; x < TILE_WIDTH * DEFAULT_SCREEN_SCALE; x+=DEFAULT_SCREEN_SCALE) {
                         u32 pixel;
-                        switch ((PaletteColor)tile.pixels[(y/SCREEN_SCALE)*TILE_WIDTH + (x/SCREEN_SCALE)]) {
+                        switch ((PaletteColor)tile.pixels[(y/DEFAULT_SCREEN_SCALE)*TILE_WIDTH + (x/DEFAULT_SCREEN_SCALE)]) {
                         case PaletteColor::White: pixel = 0xFFFFFFFF; break;
                         case PaletteColor::LightGray: pixel = 0xFFAAAAAA; break;
                         case PaletteColor::DarkGray: pixel = 0xFF555555; break;
                         case PaletteColor::Black: pixel = 0xFF000000; break;
                         }
 
-                        for (i64 y2 = 0; y2 < SCREEN_SCALE; y2++) {
-                            for (i64 x2 = 0; x2 < SCREEN_SCALE; x2++) {
-                                pixels[((y+y2)*TILE_WIDTH*SCREEN_SCALE) + (x + x2)] = pixel;
+                        for (i64 y2 = 0; y2 < DEFAULT_SCREEN_SCALE; y2++) {
+                            for (i64 x2 = 0; x2 < DEFAULT_SCREEN_SCALE; x2++) {
+                                pixels[((y+y2)*TILE_WIDTH*DEFAULT_SCREEN_SCALE) + (x + x2)] = pixel;
                             }
                         }
 
                     }
                 }
                 glBindTexture(GL_TEXTURE_2D, (GLuint)(u64)tile.textureID);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TILE_WIDTH * SCREEN_SCALE, TILE_HEIGHT * SCREEN_SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
                 tile.needsUpdate = false;
             }
         }
@@ -821,7 +859,7 @@ static void showConfigError(const char *message,  const ParserResult *result) {
     char *errorToken = PUSHMCLR(errorTokenLen + 1, char);
     strncpy(errorToken, result->errorToken, (usize)errorTokenLen); 
     
-    CO_ERR("%zd", (result->errorToken - result->errorLine));
+    CO_ERR("Parser config status: %d", result->status);
     char *tmp = strncpy(errorLine, result->errorLine, (usize)(result->errorToken - result->errorLine));
     CO_ASSERT_EQ(result->errorToken - result->errorLine, (isize)strlen(tmp));
     tmp += result->errorToken - result->errorLine;
@@ -916,9 +954,11 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
                return false;\
             }\
         } break
-        
         ConfigPair *cp = result.configPairs + i;  
+                             
         switch (cp->lhs.value) {
+            //do nothing
+            break;
         CASE_MAPPING(Start);
         CASE_MAPPING(Select);
         CASE_MAPPING(A);
@@ -960,7 +1000,23 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     }
     
     //defaults
-    //TODO
+    foriarr (programState->input.inputMappingConfig.inputMappings) {
+        InputMapping *im = programState->input.inputMappingConfig.inputMappings + i;
+        const InputMapping *defaultMapping = defaultInputMappings + i;
+        if (im->keyCode == NO_INPUT_MAPPING) {
+            im->keyCode = defaultMapping->keyCode;
+        }
+        if (im->buttonCode == NO_INPUT_MAPPING) {
+            im->buttonCode = defaultMapping->buttonCode;
+        }
+        if (im->commandCode == NO_INPUT_MAPPING) {
+            im->commandCode = defaultMapping->commandCode;
+        }
+    }
+    
+    if (programState->screenScale <= 0) {
+        programState->screenScale = DEFAULT_SCREEN_SCALE;
+    }
     
     freeParserResult(&result);
     return true;
@@ -1763,6 +1819,10 @@ int main(int argc, char **argv) {
             goto exit;
         }
         programState = PUSHM(1, ProgramState);
+        foriarr (programState->input.inputMappingConfig.inputMappings) {
+            InputMapping *im = programState->input.inputMappingConfig.inputMappings + i;
+            *im = {NO_INPUT_MAPPING, NO_INPUT_MAPPING, NO_INPUT_MAPPING};
+        }
         makeMemoryStack(FILE_MEMORY_SIZE, "fileMem", &programState->fileMemory);
 
     }
@@ -1957,10 +2017,6 @@ int main(int argc, char **argv) {
         SDL_GetWindowPosition(window, &windowX, &windowY);       
         SDL_GetWindowSize(window, &windowW, &windowH);
         
-        
-        CO_ERR("Display %d, %d", displayW, displayH);
-        CO_ERR("Window %d, %d", windowW, windowH);
-        
         if (windowW > displayW || windowH > displayH) {
             SDL_DestroyRenderer(renderer);
             SDL_DestroyWindow(window);
@@ -2059,7 +2115,6 @@ bool openFileDialogAtPath(const char *path, char *outPath) {
 		CO_ERR("Could not convert path to widechar");
 		return false;
 	}
-	//TODO utf8
 	dialog.lStructSize = sizeof(dialog);
 	dialog.Flags = OFN_FILEMUSTEXIST;
     dialog.lpstrFilter = L"Game Boy ROMs\0*.gb;*.gbc;*.sgb\0All Files\0*.*\0"; 

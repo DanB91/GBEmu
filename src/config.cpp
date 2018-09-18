@@ -3,21 +3,21 @@
 #include "config.h"
 #define CMP_STR(stringLiteral) areStringsEqualCaseInsenstive(currentToken.value.data, stringLiteral, currentToken.value.len, sizeof(stringLiteral) - 1) 
 
-enum class TokenType {
+enum class ConfigTokenType {
     Begin, Identifier, Integer,
     Other, KeyKW, ControllerKW,
     CtrlKW,
     Equals, NewLine, End
 };
 
-struct Token {
-    TokenType type;
+struct ConfigToken {
     ConfigString value;
+    ConfigTokenType type;
     int posInLine;
     int line;
 };
 
-static Token currentToken;
+static ConfigToken currentToken;
 static char *stream;
 static int currentLineNumber = 1;
 static int currentPosInLine = 1;
@@ -57,7 +57,7 @@ repeat:
     currentToken.posInLine = currentPosInLine;
     
     if (*stream == '\0') {
-        currentToken.type = TokenType::End; 
+        currentToken.type = ConfigTokenType::End; 
     }
     else if (isblank(*stream)) {
         while (*stream != '\0' && isblank(*stream)) {
@@ -67,7 +67,7 @@ repeat:
         goto repeat;
     }
     else if (isNewLineChar(*stream)) {
-        currentToken.type = TokenType::NewLine;
+        currentToken.type = ConfigTokenType::NewLine;
         currentToken.value.data = stream;
         currentToken.value.len = 1;
         while (*stream != '\0' && isspace(*stream))  {
@@ -103,7 +103,7 @@ repeat:
         goto repeat;
     }
     else if (isdigit(*stream)) {
-        currentToken.type = TokenType::Integer;
+        currentToken.type = ConfigTokenType::Integer;
         currentToken.value.data = stream;
         while (*stream != '\0' &&
                isdigit(*stream)) {
@@ -113,7 +113,7 @@ repeat:
         currentToken.value.len = stream - currentToken.value.data ;
     }
     else if (tolower(stream[0]) == 'k' && tolower(stream[1]) == 'e' && stream[2] == 'y') {
-       currentToken.type = TokenType::KeyKW;
+       currentToken.type = ConfigTokenType::KeyKW;
        currentToken.value.data = stream;
        currentToken.value.len = 3;
        stream += 3;
@@ -122,7 +122,7 @@ repeat:
     else if (tolower(stream[0]) == 'c' && tolower(stream[1]) == 'o' && tolower(stream[2]) == 'n' && 
              tolower(stream[3]) == 't' && tolower(stream[4]) == 'r' && tolower(stream[5]) == 'o' &&
              tolower(stream[6]) == 'l' && tolower(stream[7]) == 'l' && tolower(stream[8]) == 'e' && tolower(stream[9]) == 'r') {
-       currentToken.type = TokenType::ControllerKW;
+       currentToken.type = ConfigTokenType::ControllerKW;
        currentToken.value.data = stream;
        currentToken.value.len = 10;
        stream += 10 ;
@@ -131,7 +131,7 @@ repeat:
     else if (tolower(stream[0]) == 'c' && tolower(stream[1]) == 'o' && tolower(stream[2]) == 'm' && 
              tolower(stream[3]) == 'm' && tolower(stream[4]) == 'a' && tolower(stream[5]) == 'n' &&
              tolower(stream[6]) == 'd' && tolower(stream[7]) == '-' ) {
-       currentToken.type = TokenType::CtrlKW;
+       currentToken.type = ConfigTokenType::CtrlKW;
        currentToken.value.data = stream;
        currentToken.value.len = 8;
        stream += 8 ;
@@ -140,14 +140,14 @@ repeat:
     }
     else if (tolower(stream[0]) == 'c' && tolower(stream[1]) == 't' && tolower(stream[2]) == 'r' && 
              tolower(stream[3]) == 'l' && tolower(stream[4]) == '-') {
-       currentToken.type = TokenType::CtrlKW;
+       currentToken.type = ConfigTokenType::CtrlKW;
        currentToken.value.data = stream;
        currentToken.value.len = 5;
        stream += 5;
        currentPosInLine += 5;
     }
     else if (isIdentifierChar(*stream)) {
-        currentToken.type = TokenType::Identifier;
+        currentToken.type = ConfigTokenType::Identifier;
         currentToken.value.data = stream;
         while (*stream != '\0' &&
                (isIdentifierChar(*stream) ||
@@ -158,7 +158,7 @@ repeat:
         currentToken.value.len = stream - currentToken.value.data ;
     }
     else if (*stream == '=') {
-        currentToken.type = TokenType::Equals; 
+        currentToken.type = ConfigTokenType::Equals; 
         currentToken.value.data = stream;
         currentToken.value.len = 1;
         stream++;
@@ -187,21 +187,21 @@ repeat:
         
         currentToken.value.len = byteLen;
         
-        currentToken.type = TokenType::Other;
+        currentToken.type = ConfigTokenType::Other;
         currentPosInLine++;
     }
     
     
 }
 
-static bool accept(TokenType tt) {
+static bool accept(ConfigTokenType tt) {
     if (currentToken.type == tt) {
         nextToken();
         return true;
     }
     return false;
 }
-static inline bool isToken(TokenType tokenType) {
+static inline bool isToken(ConfigTokenType tokenType) {
     return currentToken.type == tokenType;
 }
 
@@ -221,7 +221,7 @@ static ParserStatus controllerMapping(ControllerMapping *outControllerMapping) {
     outControllerMapping->posInLine = currentPosInLine;
     outControllerMapping->line = currentLineNumber;
     switch (currentToken.type) {
-    case TokenType::Identifier:  {
+    case ConfigTokenType::Identifier:  {
         if (CMP_STR("a")) {
             outControllerMapping->value = ControllerMappingValue::A;
         }
@@ -282,7 +282,7 @@ static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
     outKeyMapping->posInLine = currentPosInLine;
     outKeyMapping->line = currentLineNumber;
     
-    if (currentToken.type == TokenType::CtrlKW) {
+    if (currentToken.type == ConfigTokenType::CtrlKW) {
        outKeyMapping->isCtrlHeld = true; 
        nextToken();
     }
@@ -291,8 +291,8 @@ static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
     }
 
     switch (currentToken.type) {
-    case TokenType::Equals:
-    case TokenType::Other:  {
+    case ConfigTokenType::Equals:
+    case ConfigTokenType::Other:  {
         if (*currentToken.value.data <= 'z' && *currentToken.value.data >= '!') {
             outKeyMapping->type = KeyMappingType::Character;
             outKeyMapping->characterValue = *currentToken.value.data;
@@ -301,7 +301,7 @@ static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
             return ParserStatus::UnrecognizedKeyMapping;
         }
     } break;
-    case TokenType::Identifier:  {
+    case ConfigTokenType::Identifier:  {
         outKeyMapping->type = KeyMappingType::MovementKey;
         if (currentToken.value.len == 1) {
            outKeyMapping->type = KeyMappingType::Character;
@@ -335,7 +335,7 @@ static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
             return ParserStatus::UnrecognizedKeyMapping;
         }
     } break;
-    case TokenType::Integer: {
+    case ConfigTokenType::Integer: {
         return ParserStatus::NumberKeyMappingNotAllowed;
     } break;
     default:  {
@@ -350,7 +350,7 @@ static ParserStatus rhs(RHS *outRHS) {
     outRHS->line = currentToken.line;
     outRHS->posInLine = currentToken.posInLine;
     
-    if (isToken(TokenType::KeyKW))  {
+    if (isToken(ConfigTokenType::KeyKW))  {
         outRHS->rhsType = RHSType::KeyMapping;
         nextToken();
         auto res = keyMapping(&outRHS->keyMapping);
@@ -358,7 +358,7 @@ static ParserStatus rhs(RHS *outRHS) {
             return res;
         }
     }
-    else if (isToken(TokenType::ControllerKW)) {
+    else if (isToken(ConfigTokenType::ControllerKW)) {
         outRHS->rhsType = RHSType::ControllerMapping;
         nextToken();
         auto res = controllerMapping(&outRHS->controllerMapping);
@@ -366,7 +366,7 @@ static ParserStatus rhs(RHS *outRHS) {
             return res;
         }
     }
-    else if (isToken(TokenType::Integer)) {
+    else if (isToken(ConfigTokenType::Integer)) {
        outRHS->rhsType = RHSType::Integer;
        outRHS->intValue = createIntFromCurrentToken();
     }
@@ -380,11 +380,9 @@ static ParserStatus rhs(RHS *outRHS) {
 }
 
 static ParserStatus lhs(LHS *outLHS) {
-    while (accept(TokenType::NewLine)) 
-        ;
     outLHS->line = currentToken.line;
     outLHS->posInLine = currentToken.posInLine;
-    if (isToken(TokenType::Identifier)) {
+    if (isToken(ConfigTokenType::Identifier)) {
         if (CMP_STR("up")) {
             outLHS->value = LHSValue::Up;
         }
@@ -461,7 +459,7 @@ static ParserStatus pair(ConfigPair **outputPairs) {
         return res;
     }
     
-    if (!accept(TokenType::Equals)) {
+    if (!accept(ConfigTokenType::Equals)) {
         return ParserStatus::MissingEquals; 
     }
     
@@ -470,7 +468,7 @@ static ParserStatus pair(ConfigPair **outputPairs) {
         return res;
     }
     
-    if (!accept(TokenType::NewLine) && !accept(TokenType::End)) {
+    if (!accept(ConfigTokenType::NewLine) && !accept(ConfigTokenType::End)) {
         return ParserStatus::ExtraneousToken;
     }
     
@@ -491,21 +489,25 @@ ParserResult parseConfigFile(const char *fileName) {
         return ret;
     }
     
-    currentToken.type = TokenType::Begin;
+    currentToken.type = ConfigTokenType::Begin;
     stream = currentLine = (char*)fileResult.data;
     RESIZEM(stream, fileResult.size + 1, char);
     stream[fileResult.size] = '\0';
     nextToken();
     
-    while (currentToken.type != TokenType::End) {
-        auto res = pair(&ret.configPairs);
+    while (currentToken.type != ConfigTokenType::End) {
+        while (accept(ConfigTokenType::NewLine)) 
+            ;
+        auto res = !isToken(ConfigTokenType::End) ?
+             pair(&ret.configPairs) :
+                    ParserStatus::OK;
         switch (res) {
         case ParserStatus::OK:
             break;
         default: {
             ret.errorLineNumber = currentToken.line;
             ret.errorColumn = currentToken.posInLine;
-            if (currentToken.type != TokenType::NewLine) {
+            if (currentToken.type != ConfigTokenType::NewLine) {
                 ret.errorToken = currentToken.value.data;
                 ret.errorLine = currentLine;
                 ret.stringAfterErrorToken = ret.errorToken + currentToken.value.len;

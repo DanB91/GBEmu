@@ -964,7 +964,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
 
         ImGui::Text("Frame time %.2f", gbDebug->frameTimeMS);
         ImGui::Text("Number of states saved: %zd", gbDebug->numGBStates);
-        ImGui::Text("Mouse X: %d, Y: %d", input->newState.mouseX / SCREEN_SCALE, input->newState.mouseY/ SCREEN_SCALE);
+        ImGui::Text("Mouse X: %d, Y: %d", input->newState.mouseX / DEFAULT_SCREEN_SCALE, input->newState.mouseY/ DEFAULT_SCREEN_SCALE);
         if (ImGui::CollapsingHeader("CPU")) {
             ImGui::Text("A: %X B: %X C: %X D: %X", cpu->A, cpu->B, cpu->C, cpu->D);
             ImGui::Text("E: %X F: %X H: %X L: %X", cpu->E, cpu->F, cpu->H, cpu->L);
@@ -1376,7 +1376,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                                 tile->backgroundTileRefAddr + 0x8000, tile->backgroundTileRef, 
                                 tile->x, tile->y);
                     ImGui::SameLine();
-                    ImGui::Image(gbDebug->tiles[tile->tileIndex].textureID, ImVec2(TILE_WIDTH * SCREEN_SCALE, TILE_HEIGHT * SCREEN_SCALE));
+                    ImGui::Image(gbDebug->tiles[tile->tileIndex].textureID, ImVec2(TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE));
                 }
             }
             buf_free(tiles);
@@ -1402,7 +1402,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                 fori ((i64)buf_len(oamRefs)) {
                     ImGui::Text("OAM Addr: %zX, X: %u, Y: %u, Tile Ref: %d, Flags: %X", (size_t)i + 0xFE00, oam[i+1], oam[i], oam[i+2], oam[i+3]);
                     ImGui::SameLine();
-                    ImGui::Image(gbDebug->tiles[oamRefs[i]].textureID, ImVec2(TILE_WIDTH * SCREEN_SCALE, TILE_HEIGHT * SCREEN_SCALE));
+                    ImGui::Image(gbDebug->tiles[oamRefs[i]].textureID, ImVec2(TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE));
                 }
                 clipper.End();
             }
