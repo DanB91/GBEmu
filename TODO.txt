@@ -1,8 +1,6 @@
 Bugs/Optimization:
     - check for duplicate configs
     
-    - Add out of memory alert to common.h
-    
     - Resizable window
     
     - tie .gb and .gbc files to app

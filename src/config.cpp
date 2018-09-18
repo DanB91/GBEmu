@@ -17,12 +17,12 @@ struct ConfigToken {
     int line;
 };
 
-static ConfigToken currentToken;
-static char *stream;
-static int currentLineNumber = 1;
-static int currentPosInLine = 1;
-static char *currentLine;
-static char *previousLine;
+globalvar ConfigToken currentToken;
+globalvar char *stream;
+globalvar int currentLineNumber = 1;
+globalvar int currentPosInLine = 1;
+globalvar char *currentLine;
+globalvar char *previousLine;
 
 static inline bool isIdentifierChar(char c) {
     return isalpha(c) || c == '_';

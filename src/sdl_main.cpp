@@ -225,26 +225,21 @@ static const int controllerMappingToSDLButton[] = {
   [(int)ControllerMappingValue::Select] = SDL_CONTROLLER_BUTTON_BACK,  
 };
 
-#define ALERT(fmt, ...)  do {\
-    char *msg = nullptr;\
-    buf_printf(msg, fmt, ##__VA_ARGS__);\
-    CO_ERR(fmt, ##__VA_ARGS__);\
-    alertDialog(msg);\
-    buf_free(msg);\
-}while(0)
-#define ALERT_EXIT(fmt, ...) ALERT(fmt" Exiting...", ##__VA_ARGS__)
 bool openFileDialogAtPath(const char *path, char *outPath);
 bool openDirectoryAtPath(const char *path, char *outPath);
 
+void alertDialogSDL(const char *message) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", message, nullptr);
+}
 #ifdef CO_DEBUG
-typedef void FnRunFrame(CPU *, MMU *, GameBoyDebug *, ProgramState *, TimeUS dt);
-typedef void FnReset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState);
-typedef void FnSetMemoryContext(MemoryContext *mc);
+typedef void RunFrameFn(CPU *, MMU *, GameBoyDebug *, ProgramState *, TimeUS);
+typedef void ResetFn(CPU *cpu, MMU *, GameBoyDebug *, ProgramState *);
+typedef void SetPlatformContextFn(MemoryContext *, AlertDialogFn *);
 struct GBEmuCode {
     void *handle;
-    FnRunFrame *runFrame;
-    FnReset *reset;
-    FnSetMemoryContext *setMemoryContext;
+    RunFrameFn *runFrame;
+    ResetFn *reset;
+    SetPlatformContextFn *setPlatformContext;
     time_t timeLastModified;
 };
 
@@ -254,21 +249,21 @@ GBEmuCode loadGBEmuCode(const char *gbemuCodePath) {
     ret.handle = SDL_LoadObject(gbemuCodePath);
     CO_ASSERT_MSG(ret.handle, "Error opening shared obj: %s", SDL_GetError());
 
-    ret.runFrame = (FnRunFrame*) SDL_LoadFunction(ret.handle, "runFrame");
+    ret.runFrame = (RunFrameFn*) SDL_LoadFunction(ret.handle, "runFrame");
     CO_ASSERT(ret.runFrame);
 
-    ret.reset = (FnReset*) SDL_LoadFunction(ret.handle, "reset");
+    ret.reset = (ResetFn*) SDL_LoadFunction(ret.handle, "reset");
     CO_ASSERT(ret.runFrame);
     
-    ret.setMemoryContext = (FnSetMemoryContext*) SDL_LoadFunction(ret.handle, "setMemoryContext");
-    CO_ASSERT(ret.setMemoryContext);
+    ret.setPlatformContext = (SetPlatformContextFn*) SDL_LoadFunction(ret.handle, "setPlatformContext");
+    CO_ASSERT(ret.setPlatformContext);
 
     struct stat fileStats;
     stat(gbemuCodePath, &fileStats);
 
     ret.timeLastModified = fileStats.st_mtime;
     
-    ret.setMemoryContext(getMemoryContext());
+    ret.setPlatformContext(getMemoryContext(), alertDialogSDL);
 
     return ret;
 }
@@ -297,9 +292,6 @@ struct DebuggerPlatformContext {
 };
 
 
-static void alertDialog(const char *message) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", message, nullptr);
-}
 enum class HomeDirectoryOption {
     DEFAULT = 0,
     CUSTOM,
@@ -1813,6 +1805,7 @@ int main(int argc, char **argv) {
     bool isHomePathValid = false;
     char *configFilePath = nullptr;
     {
+        initPlatformFunctions(alertDialogSDL);
         if (!initMemory(GENERAL_MEMORY_SIZE + FILE_MEMORY_SIZE, GENERAL_MEMORY_SIZE)) {
             //Do not use ALERT since it uses general memory which failed to init
             alertDialog("Not enough memory to run the emulator!");

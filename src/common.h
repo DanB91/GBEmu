@@ -71,6 +71,15 @@ typedef void (TimerFn)(void*);
 #define forirange(from,to) for (i64 i = (from); i < (to); i++)
 #define forjrange(from,to) for (i64 j = (from); j < (to); j++)
 #define globalvar static
+#define ALERT(fmt, ...)  do {\
+    char *msg = nullptr;\
+    buf_printf(msg, fmt, ##__VA_ARGS__);\
+    CO_ERR(fmt, ##__VA_ARGS__);\
+    alertDialog(msg);\
+    buf_free(msg);\
+}while(0)
+
+#define ALERT_EXIT(fmt, ...) ALERT(fmt" Exiting...", ##__VA_ARGS__)
 
 #define GB(n) (MB(n) * 1024)
 #define MB(n) (KB(n) * 1024)
@@ -78,12 +87,12 @@ typedef void (TimerFn)(void*);
 
 #define BOOL_TO_STR(x) ((x) ? "true" : "false")
 
-#define BREAKPOINT() asm volatile ("int $3\n")
 #define PRINT(format, ...) printf(format"\n", ##__VA_ARGS__)
 #define PRINT_ERR(format, ...) fprintf(stderr, format"\n", ##__VA_ARGS__)
 
 //debug tools
 #ifdef CO_DEBUG 
+#define BREAKPOINT() asm volatile ("int $3\n")
 #define CO_ASSERT(expr) do {\
         if (!(expr)) {\
             CO_ERR("Assertion Failed on %s:%d.", __FILE__, __LINE__);\
@@ -123,6 +132,7 @@ typedef void (TimerFn)(void*);
 #define CO_ASSERT_MSG(...)
 #define CO_ASSERT_EQ(expected,actual)
 #define CO_LOG(...) 
+#define BREAKPOINT() 
 #define INVALID_CODE_PATH()
 #ifdef __APPLE__
 #define CO_ERR(format, ...) fprintf(stderr, "ERROR: " format "\n", ##__VA_ARGS__)
@@ -237,15 +247,15 @@ inline i64 intPow(i64 base, i64 exp) {
 
 //memory interface
 
-#define PUSHM(n, type) (type*)pushMemory((n) * (i64)sizeof(type)) 
-#define PUSHMCLR(n, type) (type*)pushMemory((n) * (i64)sizeof(type), true) 
-#define PUSHMSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (i64)sizeof(type)) 
-#define PUSHMCLRSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (i64)sizeof(type), true) 
-#define RESIZEM(ptr, n, type) (type*)resizeMemory((u8*)ptr, (n) * (i64)sizeof(type)) 
-#define RESIZEMSTACK(stack, ptr, n, type) (type*)resizeMemory((u8*)ptr, stack, (n) * (i64)sizeof(type)) 
+#define PUSHM(n, type) (type*)pushMemory((n) * (isize)sizeof(type)) 
+#define PUSHMCLR(n, type) (type*)pushMemory((n) * (isize)sizeof(type), true) 
+#define PUSHMSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (isize)sizeof(type)) 
+#define PUSHMCLRSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (isize)sizeof(type), true) 
+#define RESIZEM(ptr, n, type) (type*)resizeMemory((u8*)ptr, (n) * (isize)sizeof(type)) 
+#define RESIZEMSTACK(stack, ptr, n, type) (type*)resizeMemory((u8*)ptr, stack, (n) * (isize)sizeof(type)) 
 #define POPMSTACK(mem, stack) popMemory((u8*)mem, stack)
 #define POPM(mem) popMemory((u8*)mem)
-#define ZEROM(mem, n, type) zeroMemory(mem, (n) * (i64)sizeof(type))
+#define ZEROM(mem, n, type) zeroMemory(mem, (n) * (isize)sizeof(type))
 
 #define CO_MALLOC(n, type) (type*)chkMalloc((n)*sizeof(type))
 #define CO_FREE(ptr) free(ptr)
@@ -282,8 +292,9 @@ struct MemoryContext {
 #ifdef CO_DEBUG
     DebugMemorySnapshot dms;
 #endif
-
 };
+
+typedef void AlertDialogFn(const char *message);
 
 struct AutoMemory {
     MemoryStack *stack;
@@ -298,21 +309,22 @@ struct AutoMemory {
 bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength);
 void makeMemoryStack(isize length, const char* name, MemoryStack *out);
 
+extern AlertDialogFn *alertDialog;
 MemoryContext *getMemoryContext();
 #ifdef CO_DEBUG
 extern "C"
 #endif
-void setMemoryContext(MemoryContext*);
+void setPlatformContext(MemoryContext *mc, AlertDialogFn *alertDialogFn);
 
-void *pushMemory(i64 size, bool clearToZero = false);
+void *pushMemory(isize size, bool clearToZero = false);
 void popMemory(u8 *memoryToPop); 
-void *resizeMemory(u8 *memoryToResize, i64 newSize);
+void *resizeMemory(u8 *memoryToResize, isize newSize);
 
-void *pushMemory(MemoryStack* stack, i64 size, bool clearToZero = false);
+void *pushMemory(MemoryStack* stack, isize size, bool clearToZero = false);
 void popMemory(u8* memoryToPop, MemoryStack* stack); 
-void *resizeMemory(u8* memoryToResize, MemoryStack* stack, i64 newSize);
+void *resizeMemory(u8* memoryToResize, MemoryStack* stack, isize newSize);
 void resetStack(MemoryStack* stack, bool clearToZero);
-i64 getAmountOfMemoryLeft(MemoryStack *stack);
+isize getAmountOfMemoryLeft(MemoryStack *stack);
 
 void *chkMalloc(size_t numBytes);
 
@@ -567,6 +579,7 @@ struct _ThreadStartContext {
 //memory
 globalvar MemoryContext *memoryContext;
 globalvar MemoryStack *generalMemory;
+AlertDialogFn *alertDialog;
 
 #ifdef CO_DEBUG
 DebugMemorySnapshot *memorySnapShot() {
@@ -590,6 +603,12 @@ void makeMemoryStack(isize size, const char *name, MemoryStack *out) {
     CO_ASSERT_MSG(memoryContext->nextFreeAddress + size <= 
             (u8*)memoryContext->memoryBase + memoryContext->size, "Request stack size %zd, bytes left: %ld", 
                   size, ((u8*)memoryContext->memoryBase + memoryContext->size) - memoryContext->nextFreeAddress);
+    if (memoryContext->nextFreeAddress + size >
+            (u8*)memoryContext->memoryBase + memoryContext->size) {
+        ALERT_EXIT("Out of memory while creating memory stack! Request size %zd, bytes left: %ld",
+                   size, ((u8*)memoryContext->memoryBase + memoryContext->size) - memoryContext->nextFreeAddress);
+        exit(1);
+    }
     
     fori (ARRAY_LEN(out->name) - 1) {
         out->name[i] = *name;
@@ -616,9 +635,10 @@ MemoryContext *getMemoryContext() {
 #ifdef CO_DEBUG
 extern "C"
 #endif
-void setMemoryContext(MemoryContext *mc) {
+void setPlatformContext(MemoryContext *mc, AlertDialogFn *alertDialogFn) {
    memoryContext = mc; 
    generalMemory = mc->generalMemory;
+   alertDialog = alertDialogFn;
 }
 
 int stringLength(const char *str) {
@@ -730,17 +750,17 @@ void copyMemory(const void* src, void* dest, i64 lenInBytes) {
     }
 
 }
-void *pushMemory(i64 size, bool clearToZero) {
+void *pushMemory(isize size, bool clearToZero) {
     return pushMemory(generalMemory, size, clearToZero);
 }
 void popMemory(u8* memoryToPop) {
     popMemory(memoryToPop, generalMemory);
 }
-void *resizeMemory(u8 *memoryToResize, i64 newSize) {
+void *resizeMemory(u8 *memoryToResize, isize newSize) {
     return resizeMemory(memoryToResize, generalMemory, newSize);
 }
 
-void *pushMemory(MemoryStack* stack, i64 size, bool clearToZero) {
+void *pushMemory(MemoryStack* stack, isize size, bool clearToZero) {
     CO_ASSERT(stack->isInited);
     u8* ret = stack->nextFreeAddress;
 
@@ -748,8 +768,8 @@ void *pushMemory(MemoryStack* stack, i64 size, bool clearToZero) {
             (i64)stack->maxSize);
     if (stack->nextFreeAddress + size - stack->baseAddress > 
             (i64)stack->maxSize) {
-        return nullptr;
-        //TODO: exit here
+        ALERT_EXIT("Ran out of memory trying to allocate %zu bytes!", size);
+        exit(1);
     }
     
     stack->nextFreeAddress += size;
@@ -773,7 +793,7 @@ void popMemory(u8* memoryToPop, MemoryStack* stack) {
     stack->nextFreeAddress = memoryToPop;
 }
 
-void *resizeMemory(u8* memoryToResize, MemoryStack* stack, i64 newSize) {
+void *resizeMemory(u8* memoryToResize, MemoryStack* stack, isize newSize) {
     CO_ASSERT(stack->isInited);
     popMemory(memoryToResize, stack);
 
@@ -791,8 +811,8 @@ void resetStack(MemoryStack* stack, bool clearToZero = false) {
     }
 }
 
-i64 getAmountOfMemoryLeft(MemoryStack *stack) {
-   i64 ret = (stack->isInited) ?
+isize getAmountOfMemoryLeft(MemoryStack *stack) {
+   isize ret = (stack->isInited) ?
                (stack->baseAddress + stack->maxSize) - stack->nextFreeAddress :
                0; 
    return ret >= 0 ? ret : 0;
@@ -801,7 +821,7 @@ i64 getAmountOfMemoryLeft(MemoryStack *stack) {
 void *chkMalloc(size_t numBytes) {
     void *ret = malloc(numBytes);
     if (!ret) {
-        CO_ERR("Ran out of memory trying to allocate %zu bytes!", numBytes);
+        ALERT_EXIT("Ran out of memory trying to malloc %zu bytes!", numBytes);
         exit(1);
     }
     return ret;
@@ -1145,6 +1165,10 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
     
     
     return true;
+}
+
+void initPlatformFunctions(AlertDialogFn *alertDialogFn) {
+    alertDialog = alertDialogFn;
 }
 
 //file 
