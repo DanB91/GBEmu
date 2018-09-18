@@ -1,4 +1,6 @@
 Bugs/Optimization:
+    - add icon
+    
     - check for duplicate configs
     
     - Resizable window
@@ -6,8 +8,6 @@ Bugs/Optimization:
     - tie .gb and .gbc files to app
     
     - Fix bugs for gameboy demo
-    
-    - Unity build for gbemu.o
     
     - Look into how games use the RTC other than Pokemon
     

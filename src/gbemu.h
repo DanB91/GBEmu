@@ -1,6 +1,7 @@
 //Copyright (C) 2018 Daniel Bokser.  See LICENSE.txt for license
 
-#pragma once 
+#ifndef GBEMU_H
+#define GBEMU_H
 
 #include "common.h"
 
@@ -604,10 +605,12 @@ void reset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState
     } while (0)
 
 
+#endif
 //shared implementation (to be moved into gbemu.cpp once we get rid of dynamic linking)
 
-#ifdef CO_IMPL
 
+#ifdef GB_IMPL
+#undef GB_IMPL
 bool pushNotification(const char *notification, int len, NotificationState *buffer) {
 
     if (buffer->numItemsQueued < MAX_NOTIFICATIONS) {

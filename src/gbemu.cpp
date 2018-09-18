@@ -3,6 +3,7 @@
 //unity
 #ifdef CO_DEBUG
 #define CO_IMPL
+#define GB_IMPL
 #endif
 #include "gbemu.h"
 #include "debugger.cpp"

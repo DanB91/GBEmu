@@ -1,8 +1,6 @@
 //Copyright (C) 2018 Daniel Bokser.  See LICENSE.txt for license
-
-#ifndef  COMMON_H
+#ifndef COMMON_H
 #define COMMON_H
-
 
 #if defined(__APPLE__) || defined(__linux__)
 #   define UNIX
@@ -306,10 +304,13 @@ struct AutoMemory {
 };
 
 
+void initPlatformFunctions(AlertDialogFn *alertDialogFn);
 bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength);
 void makeMemoryStack(isize length, const char* name, MemoryStack *out);
 
 extern AlertDialogFn *alertDialog;
+extern MemoryStack *generalMemory;
+
 MemoryContext *getMemoryContext();
 #ifdef CO_DEBUG
 extern "C"
@@ -555,6 +556,7 @@ typedef CircularBuffer<SoundFrame> SoundBuffer;
 
 /***implementation start***/
 #ifdef CO_IMPL
+#undef CO_IMPL
 #include <stdio.h>
 #include <errno.h>
 #include <limits.h>
@@ -578,7 +580,7 @@ struct _ThreadStartContext {
  *******************/
 //memory
 globalvar MemoryContext *memoryContext;
-globalvar MemoryStack *generalMemory;
+MemoryStack *generalMemory;
 AlertDialogFn *alertDialog;
 
 #ifdef CO_DEBUG

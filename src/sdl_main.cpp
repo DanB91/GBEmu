@@ -6,13 +6,18 @@
 #include <SDL2/SDL_opengl.h>
 #include <SDL2/SDL_opengl_glext.h>
 
-#include "config.h"
-
 //unity
+
 #define CO_IMPL
+#include "common.h"
 
+#define GB_IMPL
+#ifdef CO_DEBUG
+#   include "gbemu.h"
+#else
+#   include "gbemu.cpp"
+#endif
 
-#include "gbemu.h"
 #include "debugger.h"
 #include "3rdparty/gl3w.c"
 #include "config.cpp"
