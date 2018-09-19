@@ -12,6 +12,8 @@
         <string>6.0</string>
         <key>CFBundleName</key>
         <string>GBEmu</string>
+        <key>CFBundleIconFile</key>
+        <string>GBEmuIcon.icns</string>
         <key>CFBundlePackageType</key>
         <string>APPL</string>
         <key>LSMinimumSystemVersion</key>
