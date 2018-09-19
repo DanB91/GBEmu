@@ -1811,7 +1811,7 @@ int main(int argc, char **argv) {
     char *configFilePath = nullptr;
     {
         initPlatformFunctions(alertDialogSDL);
-        if (!initMemory(GENERAL_MEMORY_SIZE + FILE_MEMORY_SIZE, GENERAL_MEMORY_SIZE)) {
+        if (!initMemory(GENERAL_MEMORY_SIZE + FILE_MEMORY_SIZE /*+ MB(10)*/, GENERAL_MEMORY_SIZE)) { //reserve 10 MB
             //Do not use ALERT since it uses general memory which failed to init
             alertDialog("Not enough memory to run the emulator!");
             goto exit;

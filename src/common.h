@@ -603,11 +603,11 @@ void makeMemoryStack(isize size, const char *name, MemoryStack *out) {
     memoryContext->dms.existingStacks[memoryContext->dms.numStacks++] = out;
 #endif
     CO_ASSERT_MSG(memoryContext->nextFreeAddress + size <= 
-            (u8*)memoryContext->memoryBase + memoryContext->size, "Request stack size %zd, bytes left: %ld", 
+            (u8*)memoryContext->memoryBase + memoryContext->size, "Request stack size %zd, bytes left: %zd", 
                   size, ((u8*)memoryContext->memoryBase + memoryContext->size) - memoryContext->nextFreeAddress);
     if (memoryContext->nextFreeAddress + size >
             (u8*)memoryContext->memoryBase + memoryContext->size) {
-        ALERT_EXIT("Out of memory while creating memory stack! Request size %zd, bytes left: %ld",
+        ALERT_EXIT("Out of memory while creating memory stack! Request size %zd, bytes left: %zd",
                    size, ((u8*)memoryContext->memoryBase + memoryContext->size) - memoryContext->nextFreeAddress);
         exit(1);
     }
@@ -896,6 +896,9 @@ FileSystemResultCode copyFile(const char *src, const char *dest, MemoryStack *fi
     return writeResult;
 }
 
+void initPlatformFunctions(AlertDialogFn *alertDialogFn) {
+    alertDialog = alertDialogFn;
+}
 
 #ifdef CO_PROFILE
 
@@ -1169,9 +1172,6 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
     return true;
 }
 
-void initPlatformFunctions(AlertDialogFn *alertDialogFn) {
-    alertDialog = alertDialogFn;
-}
 
 //file 
 struct MemoryMappedFileHandle {
@@ -1584,7 +1584,7 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
    {
         CO_ASSERT(totalMemoryLength > generalMemoryLength);
         MemoryContext tmpMC = {};
-        tmpMC.size = (i64)totalMemoryLength;
+        tmpMC.size = (i64)totalMemoryLength + sizeof(MemoryContext) + sizeof(MemoryStack);
 
         //TODO: play with the COMMIT and RESERVE options
         u8* prgMemBlock = (u8*)VirtualAlloc(nullptr, (SIZE_T)totalMemoryLength, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -1603,7 +1603,7 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
 
     {
         generalMemory = (MemoryStack*)memoryContext->nextFreeAddress;
-        memoryContext->nextFreeAddress += sizeof(MemoryContext);
+        memoryContext->nextFreeAddress += sizeof(MemoryStack);
         makeMemoryStack(generalMemoryLength, "general", generalMemory);
         memoryContext->generalMemory = generalMemory;
     }

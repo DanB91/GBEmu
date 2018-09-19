@@ -9,6 +9,12 @@ mkdir $APP_DIR/Contents
 mkdir $APP_DIR/Contents/MacOS
 mkdir $APP_DIR/Contents/Frameworks
 mkdir $APP_DIR/Contents/Resources
+pushd () {
+    command pushd "$@" > /dev/null
+}
+popd () {
+    command popd "$@" > /dev/null
+}
 
 build_gbemu() {
     if pushd .. && make $1; then 
