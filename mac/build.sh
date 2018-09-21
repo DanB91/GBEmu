@@ -19,9 +19,12 @@ popd () {
 build_gbemu() {
     if pushd .. && make $1; then 
        if [[ $1 != "clean" ]]; then 
+           local version=`cat version.txt`
            popd &&
                cp ../build/gbemu $APP_DIR/Contents/MacOS && 
                cp resources/Info.plist $APP_DIR/Contents/ &&
+               sed -i .bak -e "s/@GBEmuVersion@/$version/g" $APP_DIR/Contents/Info.plist &&
+               rm $APP_DIR/Contents/Info.plist.bak &&
                cp resources/GBEmuIcon.icns $APP_DIR/Contents/Resources &&
                cp -r resources/SDL2.framework $APP_DIR/Contents/Frameworks &&
                install_name_tool $APP_DIR/Contents/MacOS/gbemu -add_rpath "@loader_path/../Frameworks"

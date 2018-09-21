@@ -1,6 +1,7 @@
 _PLATFORM_SRC=sdl_main.cpp 
 _GAME_SRC=gbemu.cpp 
 
+GBEMU_VERSION:=$(shell cat version.txt)
 PLATFORM_SRC=$(patsubst %.cpp, src/%.cpp, $(_PLATFORM_SRC))
 GAME_SRC=$(patsubst %.cpp, src/%.cpp, $(_GAME_SRC))
 
@@ -9,6 +10,7 @@ GAME_OBJ=$(patsubst %.cpp, build/%.o, $(_GAME_SRC))
 
 PLATFORM_OBJ += build/imgui.o
 
+VERSION=$(shell cat version.txt)
 
 CPPFLAGS=-g -fno-exceptions -Wall -Wextra  -std=c++11  -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast $(CFLAGS)
 CC=clang++
@@ -33,10 +35,10 @@ else
 endif
 
 profile: CPPFLAGS+=-O2 -DCO_PROFILE -g 
-profile: ctime_begin build build/gbemu_release ctime_end
+profile: ctime_begin generate_version build build/gbemu_release ctime_end
 
 release: CPPFLAGS+=-O2
-release: ctime_begin build build/gbemu_release ctime_end
+release: ctime_begin  generate_version build build/gbemu_release ctime_end
 
 debug: CPPFLAGS+=-DCO_DEBUG -DCO_PROFILE -g
 debug: FPIC+=-fPIC
@@ -73,6 +75,9 @@ build/gbemu_release: $(PLATFORM_OBJ)
 build/test: src/tests/configFileTest.cpp FORCE
 	$(CC) -o $@ $< $(CPPFLAGS)
 	build/test
+
+generate_version: version.txt
+	@echo "constexpr char GBEMU_VERSION[] = \"$(VERSION)\";" > src/version.h 
         
 print-%  : ; @echo $* = $($*)
 
@@ -81,7 +86,7 @@ FORCE:
 build:
 	mkdir -p build
 
-.PHONY: clean ctime_begin ctime_end
+.PHONY: clean ctime_begin ctime_end generate_version
 
 ctime_begin:
 	$(CTIME) -begin buildtime.ctf

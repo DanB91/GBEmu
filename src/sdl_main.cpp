@@ -1,5 +1,6 @@
 //Copyright (C) 2018 Daniel Bokser.  See LICENSE.txt for license
 
+#include "version.h"
 #include "3rdparty/GL/gl3w.h"
 
 #include <SDL2/SDL.h>
@@ -29,7 +30,7 @@
 #define access(a1,a2) _access(a1,a2)
 #endif
 
-#define RUN_BOOT_SCREEN_FLAG "-b"
+#define RUN_BOOT_SCREEN_FLAG "-b" //unused for now
 #define DEBUG_ON_BOOT_FLAG "-d"
 
 #define DEFAULT_GBEMU_HOME_PATH "gbemu_home"
@@ -1791,10 +1792,12 @@ int main(int argc, char **argv) {
         }
     }
     else if (argc != 1) {
+       PRINT("GBEmu -- Version %s", GBEMU_VERSION);
        PRINT("Usage :gbemu [-d] path_to_ROM");
        PRINT("\t" DEBUG_ON_BOOT_FLAG " -- Start with the debugger screen up and emulator paused");
        return 1; 
     }
+    PRINT("GBEmu -- Version %s", GBEMU_VERSION);
     
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;

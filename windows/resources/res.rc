@@ -14,7 +14,7 @@ BEGIN
       VALUE "LegalCopyright", "Daniel Bokser"
       VALUE "OriginalFilename", "gbemu.exe"
       VALUE "ProductName", "GBEmu"
-      VALUE "ProductVersion", "0.0.2"
+      VALUE "ProductVersion", "@GBEmuVersion@"
     END
   END
   BLOCK "VarFileInfo"
