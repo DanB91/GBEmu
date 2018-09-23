@@ -107,7 +107,7 @@ struct GameBoyDebug {
     int mouseScrollY;
     bool mouseDownState[3];
     bool isWindowInFocus;
-
+    
 };
 Breakpoint *hardwareBreakpointForAddress(u16 address, BreakpointExpectedValueType expectedValueType, GameBoyDebug *gbDebug);
 void continueFromBreakPoint(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState);

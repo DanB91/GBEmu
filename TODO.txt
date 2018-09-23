@@ -1,6 +1,4 @@
 Bugs/Optimization:
-    - add icon
-    
     - check for duplicate configs
     
     - Resizable window
@@ -65,6 +63,13 @@ Bug Notes:
     - Looks like address 0x27BF we are checking ly is never 144 as expected. It is 145, 147 or 149.  looks like the VBlank handler takes a variable number of scanlines
         to complete.  
     - This implies timings might be incorrect with lcd
+    - 144 needs to be loaded into register A at 27BC.  It looks like that the VBlank interrupt before A can get 144.
+    - When breaking at 27B8 and continuing until A and B are both 144, we see ly is 148 on both BGB and GBEmu
+        - GBEmu mode clock for lcd is at 88.  It'd helpful to see what it is on BGB
+    - When A is 144 and B is 144, the next VBlank interrupt occurs right before the LD A, ($FF00+$44) instruction.
+        - If the VBlank interrupt was executed after this instruction, we'd be good
+            -Tested it out and it works when the VBlank interrupt is delayed after the instruction executes
+        - Should it be this way?
 
 - Debug 2048
     - Caused when uncommenting the ScanVRAMAndOAM lockout code.

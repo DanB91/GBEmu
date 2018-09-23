@@ -59,12 +59,14 @@
 #   define CTRL_KEY KMOD_CTRL
 #endif
 
-#ifdef CO_PROFILE
-    static ProfileState *profileState;
-#endif
     
 #define ANALOG_STICK_DEADZONE 8000
     
+//using negative numbers as to not conflict with SDL codes
+enum class PlatformControllerTriggerMapping {
+    LeftTrigger = NO_INPUT_MAPPING - 1,
+    RightTrigger = NO_INPUT_MAPPING - 2,
+};
 
 #define DEFAULT_KEY_UP SDLK_w
 #define DEFAULT_CONTROLLER_UP SDL_CONTROLLER_BUTTON_DPAD_UP
@@ -229,6 +231,8 @@ static const int controllerMappingToSDLButton[] = {
     
   [(int)ControllerMappingValue::Start] = SDL_CONTROLLER_BUTTON_START,  
   [(int)ControllerMappingValue::Select] = SDL_CONTROLLER_BUTTON_BACK,  
+    
+  [(int)ControllerMappingValue::Home] = SDL_CONTROLLER_BUTTON_GUIDE,  
 };
 
 bool openFileDialogAtPath(const char *path, char *outPath);
@@ -400,7 +404,7 @@ static void processKey(SDL_Keycode key, bool isDown, bool isCtrlDown, Input::Sta
 }
 
 
-static void processButton(SDL_GameControllerButton button, bool isDown, Input::State *input, const InputMappingConfig *config) {
+static void processButton(int button, bool isDown, Input::State *input, const InputMappingConfig *config) {
     foriarr (config->inputMappings) {
         if (button == config->inputMappings[i].buttonCode) {
             input->actionsHit[i] = isDown;
@@ -817,7 +821,17 @@ static bool backupCartRAMFile(const char *fileNameToBackup, const char *extensio
 static bool handleInputMappingFromConfig(InputMapping *mapping, LHS *lhs, RHS *rhs) {
     switch (rhs->rhsType) {
     case RHSType::ControllerMapping: {
-        mapping->buttonCode = controllerMappingToSDLButton[(int)rhs->controllerMapping.value];
+        switch (rhs->controllerMapping.value) {
+        case ControllerMappingValue::LeftTrigger:  {
+           mapping->buttonCode = (int)PlatformControllerTriggerMapping::LeftTrigger; 
+        } break;
+        case ControllerMappingValue::RightTrigger: {
+           mapping->buttonCode = (int)PlatformControllerTriggerMapping::RightTrigger; 
+        } break;
+        default:
+            mapping->buttonCode = controllerMappingToSDLButton[(int)rhs->controllerMapping.value];
+            break;
+        }
     } break;
     case RHSType::KeyMapping: {
         if (rhs->keyMapping.isCtrlHeld) {
@@ -1513,6 +1527,22 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                                      abs(e.caxis.value) > abs(input->newState.xAxis)) {
                                 processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, true, &input->newState, &input->inputMappingConfig);
                                 processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->inputMappingConfig);
+                            }
+                        } break;
+                        case SDL_CONTROLLER_AXIS_TRIGGERLEFT: {
+                            if (e.caxis.value > ANALOG_STICK_DEADZONE) {
+                                processButton((int)PlatformControllerTriggerMapping::LeftTrigger, true, &input->newState, &input->inputMappingConfig);
+                            }
+                            else if (e.caxis.value <= ANALOG_STICK_DEADZONE) {
+                                processButton((int)PlatformControllerTriggerMapping::LeftTrigger, false, &input->newState, &input->inputMappingConfig);
+                            }
+                        } break;
+                        case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: {
+                            if (e.caxis.value > ANALOG_STICK_DEADZONE) {
+                                processButton((int)PlatformControllerTriggerMapping::RightTrigger, true, &input->newState, &input->inputMappingConfig);
+                            }
+                            else if (e.caxis.value <= ANALOG_STICK_DEADZONE) {
+                                processButton((int)PlatformControllerTriggerMapping::RightTrigger, false, &input->newState, &input->inputMappingConfig);
                             }
                         } break;
                         }

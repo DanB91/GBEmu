@@ -530,6 +530,9 @@ struct ProfileState {
 
     double programStartTime;
 };
+#ifdef CO_PROFILE
+static ProfileState *profileState;
+#endif
 void profileInit(ProfileState *ps);
 void profileStart(const char *sectionName, ProfileState *ps);
 void profileEnd(ProfileState *ps);

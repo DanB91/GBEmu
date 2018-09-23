@@ -16,9 +16,6 @@
 #define SCAN_OAM_DURATION 80
 #define SCAN_VRAM_AND_OAM_DURATION 172
 
-#ifdef CO_PROFILE
-static ProfileState *profileState;
-#endif
 
 
 static bool
