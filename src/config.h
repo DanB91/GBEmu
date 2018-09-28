@@ -12,7 +12,8 @@ enum class ParserStatus {
     ExtraneousToken,
     UnrecognizedKeyMapping,
     UnrecognizedControllerMapping,
-    UnexpectedNewLine
+    UnexpectedNewLine,
+    MissingComma
 };
 
 enum class LHSValue{
@@ -47,7 +48,7 @@ enum class MovementKeyMappingValue {
 };
 
 enum class ControllerMappingValue {
-    A=0, B, X, Y, Start, Select, LeftBumper, RightBumper, 
+    A=0, B, X, Y, Start, Back, LeftBumper, RightBumper, 
     LeftTrigger, RightTrigger, Up, Down, Left, Right, Home
 };
 struct KeyMapping {
@@ -80,7 +81,8 @@ struct RHS {
 
 struct ConfigPair {
   LHS lhs;
-  RHS rhs;  
+  RHS *rightHandSideValues;  
+  isize numRightHandSideValues;
 };
 struct ParserResult {
     //check this first

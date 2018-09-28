@@ -71,10 +71,10 @@ typedef void (TimerFn)(void*);
 #define globalvar static
 #define ALERT(fmt, ...)  do {\
     char *msg = nullptr;\
-    buf_printf(msg, fmt, ##__VA_ARGS__);\
+    buf_gen_memory_printf(msg, fmt, ##__VA_ARGS__);\
     CO_ERR(fmt, ##__VA_ARGS__);\
     alertDialog(msg);\
-    buf_free(msg);\
+    buf_gen_memory_free(msg);\
 }while(0)
 
 #define ALERT_EXIT(fmt, ...) ALERT(fmt" Exiting...", ##__VA_ARGS__)
@@ -328,6 +328,7 @@ void resetStack(MemoryStack* stack, bool clearToZero);
 isize getAmountOfMemoryLeft(MemoryStack *stack);
 
 void *chkMalloc(size_t numBytes);
+void *chkRealloc(void *ptr, size_t numBytes);
 
 void copyMemory(const void* src, void* dest, i64 lenInBytes);
 bool areStringsEqual(const char *lhs, const char *rhs, i64 lenInBytes);
@@ -370,24 +371,40 @@ struct BufHdr {
     char buf[];
 };
 
-char *buf__printf(char *buf, const char *fmt, ...) __attribute__ ((format(printf, 2, 3)));
-void *buf__grow(const void *buf, size_t new_len, size_t elem_size);
-#ifndef MAX
-#   define MAX(x,y) (((x) > (y)) ? (x) : (y))
-#endif
-#define buf__hdr(b) ((BufHdr *)((char *)(b) - offsetof(BufHdr, buf)))
+#define buf_malloc_printf(b, ...) buf_printf(chkMalloc, chkRealloc, b, __VA_ARGS__) 
+#define buf_malloc_push(b, ...) buf_push(chkMalloc, chkRealloc, b, __VA_ARGS__) 
+#define buf_malloc_free(b) ((b) ? (free(buf__hdr(b)), (b) = NULL) : 0)
+#define buf_gen_memory_printf(b, ...) buf_printf(_buf_pushMemory, _buf_resizeMemory, b, __VA_ARGS__) 
+#define buf_gen_memory_push(b, ...) buf_push(_buf_pushMemory, _buf_resizeMemory, b, __VA_ARGS__) 
+#define buf_gen_memory_free(b) ((b) ? (POPM(buf__hdr(b)), (b) = NULL) : 0)
 
 #define buf_len(b) ((b) ? buf__hdr(b)->len : 0)
 #define buf_cap(b) ((b) ? buf__hdr(b)->cap : 0)
 #define buf_end(b) ((b) + buf_len(b))
 #define buf_sizeof(b) ((b) ? buf_len(b)*sizeof(*b) : 0)
 
-#define buf_free(b) ((b) ? (POPM(buf__hdr(b)), (b) = NULL) : 0)
-#define buf_fit(b, n) ((n) <= buf_cap(b) ? 0 : ((b) = (std::remove_reference<decltype(b)>::type)buf__grow((void*)(b), (n), sizeof(*(b)))))
-#define buf_push(b, data) (buf_fit((b), 1 + buf_len(b)), (b)[buf__hdr(b)->len++] = data)
-#define buf_printf(b, ...) ((b) = buf__printf((b), __VA_ARGS__))
+
+#ifndef MAX
+#   define MAX(x,y) (((x) > (y)) ? (x) : (y))
+#endif
+#define buf__hdr(b) ((BufHdr *)((char *)(b) - offsetof(BufHdr, buf)))
+
+
+#define buf_fit(allocFn, reallocFn, b, n) ((n) <= buf_cap(b) ? 0 : ((b) = (std::remove_reference<decltype(b)>::type)buf__grow(allocFn, reallocFn, (void*)(b), (n), sizeof(*(b)))))
+#define buf_push(allocFn, reallocFn, b, data) (buf_fit(allocFn, reallocFn, (b), 1 + buf_len(b)), (b)[buf__hdr(b)->len++] = data)
+#define buf_printf(allocFn, reallocFn, b, ...) ((b) = buf__printf(allocFn, reallocFn, (b), __VA_ARGS__))
 #define buf_clear(b) ((b) ? buf__hdr(b)->len = 0 : 0)
 
+typedef void *(AllocatorFn)(usize);
+typedef void *(ReallocateFn)(void *, usize);
+inline void *_buf_pushMemory(usize size) {
+    return PUSHM((isize)size, u8);
+}
+inline void *_buf_resizeMemory(void *ptr, usize size) {
+    return RESIZEM(ptr, (isize)size, u8);
+}
+char *buf__printf(AllocatorFn *, ReallocateFn *, char *buf, const char *fmt, ...) __attribute__ ((format(printf, 4, 5)));
+void *buf__grow(AllocatorFn *, ReallocateFn *, const void *buf, size_t new_len, size_t elem_size);
 
 //file interface
 #ifdef UNIX
@@ -823,6 +840,14 @@ isize getAmountOfMemoryLeft(MemoryStack *stack) {
    return ret >= 0 ? ret : 0;
 }
 
+void *chkRealloc(void *ptr, size_t numBytes) {
+    void *ret = realloc(ptr, numBytes);
+    if (!ret) {
+        ALERT_EXIT("Ran out of memory trying to realloc %zu bytes!", numBytes);
+        exit(1);
+    }
+    return ret;
+}
 void *chkMalloc(size_t numBytes) {
     void *ret = malloc(numBytes);
     if (!ret) {
@@ -842,23 +867,23 @@ AutoMemory::~AutoMemory() {
     POPMSTACK(memory, stack);
 }
 
-void *buf__grow(const void *buf, size_t new_len, size_t elem_size) {
+void *buf__grow(AllocatorFn *allocator, ReallocateFn *reallocator, const void *buf, size_t new_len, size_t elem_size) {
     CO_ASSERT(buf_cap(buf) <= (SIZE_MAX - 1)/2);
     size_t new_cap = MAX(16, MAX(1 + 2*buf_cap(buf), new_len));
     CO_ASSERT(new_len <= new_cap);
     CO_ASSERT(new_cap <= (SIZE_MAX - offsetof(BufHdr, buf))/elem_size);
-    i64 new_size = (i64)(offsetof(BufHdr, buf) + new_cap*elem_size);
+    usize new_size = (offsetof(BufHdr, buf) + new_cap*elem_size);
     BufHdr *new_hdr;
     if (buf) {
-        new_hdr = (BufHdr*)RESIZEM(buf__hdr(buf), new_size, u8);
+        new_hdr = (BufHdr*)reallocator(buf__hdr(buf), new_size);
     } else {
-        new_hdr = (BufHdr*)PUSHM(new_size, u8);
+        new_hdr = (BufHdr*)allocator(new_size);
         new_hdr->len = 0;
     }   
     new_hdr->cap = new_cap;
     return new_hdr->buf;
 }
-char *buf__printf(char *buf, const char *fmt, ...) {
+char *buf__printf(AllocatorFn *allocator, ReallocateFn *reallocator, char *buf, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     size_t cap = buf_cap(buf) - buf_len(buf);
@@ -866,7 +891,7 @@ char *buf__printf(char *buf, const char *fmt, ...) {
 
     va_end(args);
     if (n > cap) {
-        buf_fit(buf, n + buf_len(buf));
+        buf_fit(allocator, reallocator, buf, n + buf_len(buf));
         va_start(args, fmt);
         cap = buf_cap(buf) - buf_len(buf);
         n = 1 + (size_t)vsnprintf(buf_end(buf), cap, fmt, args);
@@ -1084,7 +1109,8 @@ Thread *startThread(ThreadFn fn, void *arg)  {
 	tsc->parameter= arg;
     int result = pthread_create(&ret->value, nullptr, threadStart, tsc);
     UNUSED(result);
-    CO_ASSERT_MSG(result == 0, "Failed to create timer thread!");
+    CO_ASSERT_MSG(result == 0, "Failed to create thread!");
+    
     
     return ret;
 }

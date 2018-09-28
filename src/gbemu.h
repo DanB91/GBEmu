@@ -483,47 +483,24 @@ struct NotificationState {
 };
 struct GameBoyDebug;
 
-#define NO_INPUT_MAPPING -1
-struct InputMapping {
-    int keyCode = NO_INPUT_MAPPING;
-    int buttonCode = NO_INPUT_MAPPING;  
-    int commandCode = NO_INPUT_MAPPING;
-    
-    InputMapping(int keyCode, int buttonCode, int commandCode)
-        :keyCode(keyCode), buttonCode(buttonCode), commandCode(commandCode)
-    {}
-};
-
-union InputMappingConfig {
-    struct {
-        InputMapping LeftMapping, RightMapping, UpMapping, DownMapping;
-        InputMapping AMapping, BMapping, StartMapping, SelectMapping;
-
-        InputMapping RewindMapping, ContinueMapping, StepMapping, MuteMapping;
-        InputMapping PauseMapping, ResetMapping, ShowDebuggerMapping, ShowHomePathMapping;
-        InputMapping FullScreenMapping;
-    };
-    InputMapping inputMappings[17];
-};
 
 struct Input {
+    enum class Action {
+        Left = 0, Right, Up, Down,
+        A, B, Start, Select,
+
+        Rewind, Continue, Step, Mute,
+        Pause, Reset, ShowDebugger, ShowHomePath,
+        FullScreen,
+
+        NumActions
+    };
 
     struct State {
         //emu controls
         bool saveState, restoreState, escapeFullScreen, enterPressed;
         
-        union { 
-            struct {
-                bool Left, Right, Up, Down;
-                bool A, B, Start, Select;
-
-                bool Rewind, Continue, Step, Mute;
-                bool Pause, Reset, ShowDebugger, ShowHomePath;
-                bool FullScreen;
-
-            };
-            bool actionsHit[17];
-        };
+        bool actionsHit[(int)Action::NumActions];
         
         int slotToRestoreOrSave;
         
@@ -533,12 +510,22 @@ struct Input {
         //debug controls
         i32 mouseX, mouseY;
     };
+#define NO_INPUT_MAPPING -1
+    struct Mapping {
+        int code;
+        Action action; 
+    };
     State newState;
     State oldState;
     
     //TODO: hashmap to addresses of State booleans?
     //Keyboard Mappings
-    InputMappingConfig inputMappingConfig;
+    Mapping *controllerMappings;
+    isize numControllerMappings;
+    Mapping *keyMappings;
+    isize numKeyMappings;
+    Mapping *ctrlKeyMappings;
+    isize numCtrlKeyMappings;
 
     //debug controls
 };
@@ -561,20 +548,24 @@ struct ProgramState {
     
     int screenScale;
 };
-static inline u8
-lb(u16 word) {
+inline u8 lb(u16 word) {
     return (u8)(word & 0xFF);
 }
 
-static inline u8
-hb(u16 word) {
+inline u8 hb(u16 word) {
     return (u8)((word >> 8) & 0xFF);
 }
 
-static inline u16
-word(u8 h, u8 l) {
+inline u16 word(u8 h, u8 l) {
     u16 ret = (u16)((u16)h << 8) | (u16)l;
     return ret;
+}
+
+inline bool isActionDown(Input::Action action, const Input *input) {
+   return input->newState.actionsHit[(int)action];
+}
+inline bool isActionPressed(Input::Action action, const Input *input) {
+   return input->newState.actionsHit[(int)action] && !input->oldState.actionsHit[(int)action];
 }
 
 bool pushNotification(const char *notification, int len, NotificationState *buffer);
@@ -599,9 +590,9 @@ void reset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState
 
 #define NOTIFY(buffer, fmt, ...) do {\
     char *str = nullptr;\
-    buf_printf(str, fmt, ##__VA_ARGS__);\
+    buf_gen_memory_printf(str, fmt, ##__VA_ARGS__);\
     pushNotification(str, stringLength(str) + 1, buffer);\
-    buf_free(str);\
+    buf_gen_memory_free(str);\
     } while (0)
 
 

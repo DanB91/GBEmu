@@ -6,7 +6,7 @@
 enum class ConfigTokenType {
     Begin, Identifier, Integer,
     Other, KeyKW, ControllerKW,
-    CtrlKW,
+    CtrlKW, Comma,
     Equals, NewLine, End
 };
 
@@ -164,6 +164,13 @@ repeat:
         stream++;
         currentPosInLine++;
     }
+    else if (*stream == ',') {
+        currentToken.type = ConfigTokenType::Comma;
+        currentToken.value.data = stream;
+        currentToken.value.len = 1;
+        stream++;
+        currentPosInLine++;
+    }
     else {
         u8 leadByte = (u8)*stream;
         currentToken.value.data = stream;
@@ -249,8 +256,8 @@ static ParserStatus controllerMapping(ControllerMapping *outControllerMapping) {
         else if (CMP_STR("start")) {
             outControllerMapping->value = ControllerMappingValue::Start;
         }
-        else if (CMP_STR("select")) {
-            outControllerMapping->value = ControllerMappingValue::Select;
+        else if (CMP_STR("back")) {
+            outControllerMapping->value = ControllerMappingValue::Back;
         }
         else if (CMP_STR("leftbumper")) {
             outControllerMapping->value = ControllerMappingValue::LeftBumper;
@@ -292,6 +299,7 @@ static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
 
     switch (currentToken.type) {
     case ConfigTokenType::Equals:
+    case ConfigTokenType::Comma:
     case ConfigTokenType::Other:  {
         if (*currentToken.value.data <= 'z' && *currentToken.value.data >= '!') {
             outKeyMapping->type = KeyMappingType::Character;
@@ -346,10 +354,10 @@ static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
     return ParserStatus::OK;
 }
 
-static ParserStatus rhs(RHS *outRHS) {
+static ParserStatus rhsValue(RHS *outRHS) {
     outRHS->line = currentToken.line;
     outRHS->posInLine = currentToken.posInLine;
-    
+
     if (isToken(ConfigTokenType::KeyKW))  {
         outRHS->rhsType = RHSType::KeyMapping;
         nextToken();
@@ -367,13 +375,12 @@ static ParserStatus rhs(RHS *outRHS) {
         }
     }
     else if (isToken(ConfigTokenType::Integer)) {
-       outRHS->rhsType = RHSType::Integer;
-       outRHS->intValue = createIntFromCurrentToken();
+        outRHS->rhsType = RHSType::Integer;
+        outRHS->intValue = createIntFromCurrentToken();
     }
     else {
         return ParserStatus::BadRHSToken;
     }
-    
     
     nextToken();
     return ParserStatus::OK;
@@ -453,6 +460,8 @@ static ParserStatus lhs(LHS *outLHS) {
 
 static ParserStatus pair(ConfigPair **outputPairs) {
     ConfigPair configPair;
+    RHS tmpRHS;
+    configPair.rightHandSideValues = nullptr;
     
     auto res = lhs(&configPair.lhs);
     if (res != ParserStatus::OK) {
@@ -463,16 +472,26 @@ static ParserStatus pair(ConfigPair **outputPairs) {
         return ParserStatus::MissingEquals; 
     }
     
-    res = rhs(&configPair.rhs);
-    if (res != ParserStatus::OK) {
-        return res;
-    }
+    for (;;) {
+        res = rhsValue(&tmpRHS);
+        if (res != ParserStatus::OK) {
+            return res;
+        }
+        
+        if (accept(ConfigTokenType::Comma)) {
+            buf_malloc_push(configPair.rightHandSideValues, tmpRHS); 
+        }
+        else if(accept(ConfigTokenType::NewLine) || accept(ConfigTokenType::End)) {
+            buf_malloc_push(configPair.rightHandSideValues, tmpRHS); 
+            break;
+        }
+        else {
+            return ParserStatus::MissingComma;
+        }
+    } 
+    configPair.numRightHandSideValues = (isize)buf_len(configPair.rightHandSideValues);
     
-    if (!accept(ConfigTokenType::NewLine) && !accept(ConfigTokenType::End)) {
-        return ParserStatus::ExtraneousToken;
-    }
-    
-    buf_push(*outputPairs, configPair);
+    buf_malloc_push(*outputPairs, configPair);
     return ParserStatus::OK;
 }
 
@@ -543,4 +562,8 @@ ParserResult parseConfigFile(const char *fileName) {
 
 void freeParserResult(ParserResult *parserResult) {
    POPM(parserResult->stream); 
+   fori((isize)buf_len(parserResult->configPairs)) {
+       buf_malloc_free(parserResult->configPairs[i].rightHandSideValues);
+   }
+   buf_malloc_free(parserResult->configPairs);
 }

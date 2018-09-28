@@ -3293,31 +3293,31 @@ void runFrame(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programSt
 #define WAS_PRESSED(button) (input->newState.button == true && input->oldState.button == false)
 #define IS_DOWN(button) (input->newState.button)
         if (cpu->isPaused) {
-            if (WAS_PRESSED(Step)) {
+            if (isActionPressed(Input::Action::Step, input)) {
                 step(cpu, mmu, gbDebug, programState->soundState.volume);
             }
         }
         
-        if (WAS_PRESSED(Reset)) {
+        if (isActionPressed(Input::Action::Reset, input)) {
             reset(cpu, mmu, gbDebug, programState);
         }
-        if (WAS_PRESSED(ShowHomePath)) {
+        if (isActionPressed(Input::Action::ShowHomePath, input)) {
             NOTIFY(notifications, "GBEmu Home Directory: %s", programState->homeDirectoryPath);
         }
-        if (WAS_PRESSED(Mute)) {
+        if (isActionPressed(Input::Action::Mute, input)) {
             soundState->isMuted = !soundState->isMuted;
             programState->shouldUpdateTitleBar = true;
         }
-        if (WAS_PRESSED(Pause)) {
+        if (isActionPressed(Input::Action::Pause, input)) {
             setPausedState(!cpu->isPaused, programState, cpu);
             if (!cpu->isPaused && mmu->hasRTC) {
                 syncRTCTime(&mmu->rtc, mmu->cartRAMPlatformState.rtcFileMap);
             }
         }
-        if (WAS_PRESSED(Continue)) {
+        if (isActionPressed(Input::Action::Continue, input)) {
             continueFromBreakPoint(gbDebug, mmu, cpu, programState); 
         }
-        if (WAS_PRESSED(Rewind)) {
+        if (isActionPressed(Input::Action::Rewind, input)) {
             if (!rewindState(cpu, mmu, gbDebug)) {
                 NOTIFY(notifications, "Nothing left to rewind!");
             }
@@ -3361,15 +3361,15 @@ void runFrame(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programSt
             }
         }
         
-        mmu->joyPad.a = IS_DOWN(A) ? JPButtonState::Down : JPButtonState::Up;
-        mmu->joyPad.b = IS_DOWN(B) ? JPButtonState::Down : JPButtonState::Up;
-        mmu->joyPad.start = IS_DOWN(Start) ? JPButtonState::Down : JPButtonState::Up;
-        mmu->joyPad.select = IS_DOWN(Select) ? JPButtonState::Down : JPButtonState::Up;
+        mmu->joyPad.a = isActionDown(Input::Action::A, input) ? JPButtonState::Down : JPButtonState::Up;
+        mmu->joyPad.b = isActionDown(Input::Action::B, input) ? JPButtonState::Down : JPButtonState::Up;
+        mmu->joyPad.start = isActionDown(Input::Action::Start, input) ? JPButtonState::Down : JPButtonState::Up;
+        mmu->joyPad.select = isActionDown(Input::Action::Select, input) ? JPButtonState::Down : JPButtonState::Up;
         
-        mmu->joyPad.up = IS_DOWN(Up) ? JPButtonState::Down : JPButtonState::Up;
-        mmu->joyPad.down = IS_DOWN(Down) ? JPButtonState::Down : JPButtonState::Up;
-        mmu->joyPad.left = IS_DOWN(Left) ? JPButtonState::Down : JPButtonState::Up;
-        mmu->joyPad.right = IS_DOWN(Right) ? JPButtonState::Down : JPButtonState::Up;
+        mmu->joyPad.up = isActionDown(Input::Action::Up, input) ? JPButtonState::Down : JPButtonState::Up;
+        mmu->joyPad.down = isActionDown(Input::Action::Down, input) ? JPButtonState::Down : JPButtonState::Up;
+        mmu->joyPad.left = isActionDown(Input::Action::Left, input) ? JPButtonState::Down : JPButtonState::Up;
+        mmu->joyPad.right = isActionDown(Input::Action::Right, input) ? JPButtonState::Down : JPButtonState::Up;
         
     }
     

@@ -6,8 +6,7 @@
 a = key /   
 b = key .
 
-start = key #
-start = controller start
+start = controller start, key #, key enter
 
 pause = key command-p
 

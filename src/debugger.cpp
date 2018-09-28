@@ -833,9 +833,9 @@ static void drawProfileSection(ProfileState *profileState, ProfileSectionState *
     }
     ImGui::NextColumn();
     char *maxRunStr = nullptr;
-    buf_printf(maxRunStr, "%.2fus##%s", pss->maxRunTimeInSeconds * 1000000, pss->sectionName);
+    buf_gen_memory_printf(maxRunStr, "%.2fus##%s", pss->maxRunTimeInSeconds * 1000000, pss->sectionName);
     ImGui::Selectable(maxRunStr, false, ImGuiSelectableFlags_SpanAllColumns);
-    buf_free(maxRunStr);
+    buf_gen_memory_free(maxRunStr);
 
     ImGui::NextColumn();
     ImGui::Text("%.2fus", (pss->totalRunTimeInSeconds / pss->numTimesCalled) * 1000000);
@@ -1257,25 +1257,25 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             if (ImGui::Button("Save")) {
                 char *buffer = nullptr;
                 fori(numColumns - 1) {
-                    buf_printf(buffer, "%s,", columns[i]);
+                    buf_gen_memory_printf(buffer, "%s,", columns[i]);
                 }
-                buf_printf(buffer, "%s,Total Runtime", columns[numColumns - 1]);
-                buf_printf(buffer, "\r\n");
+                buf_gen_memory_printf(buffer, "%s,Total Runtime", columns[numColumns - 1]);
+                buf_gen_memory_printf(buffer, "\r\n");
 
                 fori(profileState->numProfileSections) {
                     auto pss = profileSectionStateForName(profileState->sectionNames[i], profileState);
-                    buf_printf(buffer, "%s,", pss->sectionName);
-                    buf_printf(buffer, "%.2fus,", pss->maxRunTimeInSeconds * 1000000);
-                    buf_printf(buffer, "%.2fus,", (pss->totalRunTimeInSeconds / pss->numTimesCalled) * 1000000);
-                    buf_printf(buffer, "%.2fs,", pss->totalRunTimeInSeconds);
-                    buf_printf(buffer, "%.2f%%,", (pss->totalRunTimeInSeconds / (now - profileState->programStartTime)) * 100);
-                    buf_printf(buffer, "%.2f", now - profileState->programStartTime);
-                    buf_printf(buffer, "\r\n");
+                    buf_gen_memory_printf(buffer, "%s,", pss->sectionName);
+                    buf_gen_memory_printf(buffer, "%.2fus,", pss->maxRunTimeInSeconds * 1000000);
+                    buf_gen_memory_printf(buffer, "%.2fus,", (pss->totalRunTimeInSeconds / pss->numTimesCalled) * 1000000);
+                    buf_gen_memory_printf(buffer, "%.2fs,", pss->totalRunTimeInSeconds);
+                    buf_gen_memory_printf(buffer, "%.2f%%,", (pss->totalRunTimeInSeconds / (now - profileState->programStartTime)) * 100);
+                    buf_gen_memory_printf(buffer, "%.2f", now - profileState->programStartTime);
+                    buf_gen_memory_printf(buffer, "\r\n");
                 }
                 i64 fileNameLen = timestampFileName("profile", "csv", fileName);
                 writeDataToFile(buffer, (i64)buf_len(buffer), fileName);
                 copyMemory(fileName, gbDebug->lastFileNameWritten, (i64)fileNameLen + 1);
-                buf_free(buffer);
+                buf_gen_memory_free(buffer);
             }
 
             if (gbDebug->lastFileNameWritten[0]) {
@@ -1364,7 +1364,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                     tile.backgroundTileRefAddr = backgroundTileRefAddr;
                     tile.tileIndex = tileIndex;
 
-                    buf_push(tiles, tile);
+                    buf_gen_memory_push(tiles, tile);
 
                 }
             }
@@ -1379,7 +1379,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                     ImGui::Image(gbDebug->tiles[tile->tileIndex].textureID, ImVec2(TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE));
                 }
             }
-            buf_free(tiles);
+            buf_gen_memory_free(tiles);
 
         }
         ImGui::End();
@@ -1394,7 +1394,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             u8 *oamRefs = nullptr;
             for (i64 i = 0; i < ARRAY_LEN(mmu->lcd.oam); i += 4) {
                 if (oam[i] > 0 && oam[i] < SCREEN_HEIGHT + MAX_SPRITE_HEIGHT && oam[i+1] > 0 && oam[i+1] < SCREEN_WIDTH + MAX_SPRITE_WIDTH) {
-                    buf_push(oamRefs, oam[i+2]);
+                    buf_gen_memory_push(oamRefs, oam[i+2]);
                 }
             }
             if (buf_len(oamRefs) > 0) {
