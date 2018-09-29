@@ -11,7 +11,7 @@ enum class ConfigTokenType {
 };
 
 struct ConfigToken {
-    ConfigString value;
+    NonNullTerminatedString value;
     ConfigTokenType type;
     int posInLine;
     int line;
@@ -354,100 +354,102 @@ static ParserStatus keyMapping(KeyMapping *outKeyMapping) {
     return ParserStatus::OK;
 }
 
-static ParserStatus rhsValue(RHS *outRHS) {
-    outRHS->line = currentToken.line;
-    outRHS->posInLine = currentToken.posInLine;
+static ParserStatus configValue(ConfigValue *outConfigValue) {
+    outConfigValue->line = currentToken.line;
+    outConfigValue->posInLine = currentToken.posInLine;
 
     if (isToken(ConfigTokenType::KeyKW))  {
-        outRHS->rhsType = RHSType::KeyMapping;
+        outConfigValue->type = ConfigValueType::KeyMapping;
         nextToken();
-        auto res = keyMapping(&outRHS->keyMapping);
+        auto res = keyMapping(&outConfigValue->keyMapping);
         if (res != ParserStatus::OK) {
             return res;
         }
     }
     else if (isToken(ConfigTokenType::ControllerKW)) {
-        outRHS->rhsType = RHSType::ControllerMapping;
+        outConfigValue->type = ConfigValueType::ControllerMapping;
         nextToken();
-        auto res = controllerMapping(&outRHS->controllerMapping);
+        auto res = controllerMapping(&outConfigValue->controllerMapping);
         if (res != ParserStatus::OK) {
             return res;
         }
     }
     else if (isToken(ConfigTokenType::Integer)) {
-        outRHS->rhsType = RHSType::Integer;
-        outRHS->intValue = createIntFromCurrentToken();
+        outConfigValue->type = ConfigValueType::Integer;
+        outConfigValue->intValue = createIntFromCurrentToken();
     }
     else {
         return ParserStatus::BadRHSToken;
     }
     
+    outConfigValue->textFromFile = currentToken.value;
     nextToken();
     return ParserStatus::OK;
 }
 
-static ParserStatus lhs(LHS *outLHS) {
-    outLHS->line = currentToken.line;
-    outLHS->posInLine = currentToken.posInLine;
+static ParserStatus lhs(ConfigKey *outConfigKey) {
+    outConfigKey->line = currentToken.line;
+    outConfigKey->posInLine = currentToken.posInLine;
     if (isToken(ConfigTokenType::Identifier)) {
         if (CMP_STR("up")) {
-            outLHS->value = LHSValue::Up;
+            outConfigKey->type = ConfigKeyType::Up;
         }
         else if (CMP_STR("down")) {
-            outLHS->value = LHSValue::Down;
+            outConfigKey->type = ConfigKeyType::Down;
         }
         else if (CMP_STR("left")) {
-            outLHS->value = LHSValue::Left;
+            outConfigKey->type = ConfigKeyType::Left;
         }
         else if (CMP_STR("right")) {
-            outLHS->value = LHSValue::Right;
+            outConfigKey->type = ConfigKeyType::Right;
         }
         else if (CMP_STR("a")) {
-            outLHS->value = LHSValue::A;
+            outConfigKey->type = ConfigKeyType::A;
         }
         else if (CMP_STR("b")) {
-            outLHS->value = LHSValue::B;
+            outConfigKey->type = ConfigKeyType::B;
         }
         else if (CMP_STR("start")) {
-            outLHS->value = LHSValue::Start;
+            outConfigKey->type = ConfigKeyType::Start;
         }
         else if (CMP_STR("select")) {
-            outLHS->value = LHSValue::Select;
+            outConfigKey->type = ConfigKeyType::Select;
         }
         else if (CMP_STR("rewind")) {
-            outLHS->value = LHSValue::Rewind;
+            outConfigKey->type = ConfigKeyType::Rewind;
         }
         else if (CMP_STR("step")) {
-            outLHS->value = LHSValue::Step;
+            outConfigKey->type = ConfigKeyType::Step;
         }
         else if (CMP_STR("continue")) {
-            outLHS->value = LHSValue::Continue;
+            outConfigKey->type = ConfigKeyType::Continue;
         }
         else if (CMP_STR("mute")) {
-            outLHS->value = LHSValue::Mute;
+            outConfigKey->type = ConfigKeyType::Mute;
         }
         else if (CMP_STR("screenscale")) {
-            outLHS->value = LHSValue::ScreenScale;
+            outConfigKey->type = ConfigKeyType::ScreenScale;
         }
         else if (CMP_STR("pause")) {
-            outLHS->value = LHSValue::Pause;
+            outConfigKey->type = ConfigKeyType::Pause;
         }
         else if (CMP_STR("showdebugger")) {
-            outLHS->value = LHSValue::ShowDebugger;
+            outConfigKey->type = ConfigKeyType::ShowDebugger;
         }
         else if (CMP_STR("reset")) {
-            outLHS->value = LHSValue::Reset;
+            outConfigKey->type = ConfigKeyType::Reset;
         }
         else if (CMP_STR("showhomepath")) {
-            outLHS->value = LHSValue::ShowHomePath;
+            outConfigKey->type = ConfigKeyType::ShowHomePath;
         }
         else if (CMP_STR("fullscreen")) {
-            outLHS->value = LHSValue::FullScreen;
+            outConfigKey->type = ConfigKeyType::FullScreen;
         }
         else {
             return ParserStatus::UnknownLHSConfig;
         }
         
+        outConfigKey->textFromFile = currentToken.value;
         nextToken();
     }
     else {
@@ -460,10 +462,10 @@ static ParserStatus lhs(LHS *outLHS) {
 
 static ParserStatus pair(ConfigPair **outputPairs) {
     ConfigPair configPair;
-    RHS tmpRHS;
-    configPair.rightHandSideValues = nullptr;
+    ConfigValue tmpRHS;
+    configPair.values = nullptr;
     
-    auto res = lhs(&configPair.lhs);
+    auto res = lhs(&configPair.key);
     if (res != ParserStatus::OK) {
         return res;
     }
@@ -473,23 +475,23 @@ static ParserStatus pair(ConfigPair **outputPairs) {
     }
     
     for (;;) {
-        res = rhsValue(&tmpRHS);
+        res = configValue(&tmpRHS);
         if (res != ParserStatus::OK) {
             return res;
         }
         
         if (accept(ConfigTokenType::Comma)) {
-            buf_malloc_push(configPair.rightHandSideValues, tmpRHS); 
+            buf_malloc_push(configPair.values, tmpRHS); 
         }
         else if(accept(ConfigTokenType::NewLine) || accept(ConfigTokenType::End)) {
-            buf_malloc_push(configPair.rightHandSideValues, tmpRHS); 
+            buf_malloc_push(configPair.values, tmpRHS); 
             break;
         }
         else {
             return ParserStatus::MissingComma;
         }
     } 
-    configPair.numRightHandSideValues = (isize)buf_len(configPair.rightHandSideValues);
+    configPair.numValues = (isize)buf_len(configPair.values);
     
     buf_malloc_push(*outputPairs, configPair);
     return ParserStatus::OK;
@@ -563,7 +565,7 @@ ParserResult parseConfigFile(const char *fileName) {
 void freeParserResult(ParserResult *parserResult) {
    POPM(parserResult->stream); 
    fori((isize)buf_len(parserResult->configPairs)) {
-       buf_malloc_free(parserResult->configPairs[i].rightHandSideValues);
+       buf_malloc_free(parserResult->configPairs[i].values);
    }
    buf_malloc_free(parserResult->configPairs);
 }

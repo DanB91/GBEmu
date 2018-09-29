@@ -1121,7 +1121,7 @@ Mutex *createMutex() {
     Mutex *ret = CO_MALLOC(1, Mutex);
     int result = pthread_mutex_init(&ret->value, nullptr);
     UNUSED(result);
-    CO_ASSERT_MSG(result == 0, "Could create mutex"); 
+    CO_ASSERT_MSG(result == 0, "Could not create mutex"); 
     return ret;
 }
 void lockMutex(Mutex *mutex) {

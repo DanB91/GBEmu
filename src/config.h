@@ -16,7 +16,7 @@ enum class ParserStatus {
     MissingComma
 };
 
-enum class LHSValue{
+enum class ConfigKeyType{
     Up, Down, Left, Right,
     A, B, Start, Select, Rewind,
     Step, Continue, Mute,
@@ -24,18 +24,18 @@ enum class LHSValue{
     Reset, ShowHomePath, FullScreen,
 };
 
-//non null terminated
-struct ConfigString {
+struct NonNullTerminatedString {
     char *data;
     i64 len; 
 };
-struct LHS {
-    LHSValue value; 
+struct ConfigKey {
+    NonNullTerminatedString textFromFile;
+    ConfigKeyType type; 
     int posInLine;
     int line;
 };
 
-enum class RHSType {
+enum class ConfigValueType {
     ControllerMapping, KeyMapping, Integer
 };
 
@@ -68,8 +68,9 @@ struct ControllerMapping {
    int line;
 };
 
-struct RHS {
-    RHSType rhsType;
+struct ConfigValue {
+    ConfigValueType type;
+    NonNullTerminatedString textFromFile;
     union {
        KeyMapping keyMapping;
        ControllerMapping controllerMapping;
@@ -80,9 +81,9 @@ struct RHS {
 };
 
 struct ConfigPair {
-  LHS lhs;
-  RHS *rightHandSideValues;  
-  isize numRightHandSideValues;
+  ConfigKey key;
+  ConfigValue *values;  
+  isize numValues;
 };
 struct ParserResult {
     //check this first

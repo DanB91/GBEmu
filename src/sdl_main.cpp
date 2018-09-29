@@ -730,12 +730,12 @@ static bool backupCartRAMFile(const char *fileNameToBackup, const char *extensio
 }
 
 static bool handleInputMappingFromConfig(Input *input, Input::Action action,
-                                         LHS *lhs, RHS *rhsValues, isize numRHSValues) {
+                                         ConfigKey *configKey, ConfigValue *configValues, isize numConfigValues) {
     Input::Mapping mapping;
-    fori (numRHSValues) {
-        RHS *rhs = &rhsValues[i];
-        switch (rhs->rhsType) {
-        case RHSType::ControllerMapping: {
+    fori (numConfigValues) {
+        ConfigValue *rhs = &configValues[i];
+        switch (rhs->type) {
+        case ConfigValueType::ControllerMapping: {
             switch (rhs->controllerMapping.value) {
             case ControllerMappingValue::LeftTrigger: {
                 mapping.code = (int)PlatformControllerTriggerMapping::LeftTrigger; 
@@ -750,7 +750,7 @@ static bool handleInputMappingFromConfig(Input *input, Input::Action action,
             mapping.action = action;
             buf_malloc_push(input->controllerMappings, mapping);
         } break;
-        case RHSType::KeyMapping: {
+        case ConfigValueType::KeyMapping: {
             if (rhs->keyMapping.isCtrlHeld) {
                 switch (rhs->keyMapping.type) {
                 case KeyMappingType::Character: {
@@ -779,7 +779,11 @@ static bool handleInputMappingFromConfig(Input *input, Input::Action action,
             }
         } break;
         default: {
-            ALERT_EXIT("Option at line: %d, column %d in %s must be bound to a controller or key mapping.", lhs->line, lhs->posInLine, GBEMU_CONFIG_FILENAME);
+            char *configKeyString = PUSHMCLR(configKey->textFromFile.len + 1, char);
+            AutoMemory am(configKeyString);
+            copyMemory(configKey->textFromFile.data, configKeyString, configKey->textFromFile.len);
+            ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a controller or key mapping.", 
+                       configKeyString, configKey->line, configKey->posInLine, GBEMU_CONFIG_FILENAME);
             return false;
         } break;
         }
@@ -891,15 +895,15 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     
     input->keyMappings = input->controllerMappings = input->ctrlKeyMappings = nullptr;
     fori (result.numConfigPairs) {
-#define CASE_MAPPING(mapping)  case LHSValue::mapping: {\
+#define CASE_MAPPING(mapping)  case ConfigKeyType::mapping: {\
             if (!handleInputMappingFromConfig(input,\
-                Input::Action::mapping, &cp->lhs, cp->rightHandSideValues, cp->numRightHandSideValues)) {\
+                Input::Action::mapping, &cp->key, cp->values, cp->numValues)) {\
                return false;\
             }\
         } break
         ConfigPair *cp = result.configPairs + i;  
                              
-        switch (cp->lhs.value) {
+        switch (cp->key.type) {
             //do nothing
             break;
         CASE_MAPPING(Start);
@@ -919,26 +923,32 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
         CASE_MAPPING(Continue);
         CASE_MAPPING(Reset);
         CASE_MAPPING(FullScreen);
-        case LHSValue::ScreenScale: {
-           if (cp->numRightHandSideValues != 1) {
+        case ConfigKeyType::ScreenScale: {
+           if (cp->numValues != 1) {
                ALERT_EXIT("ScreenScale config option must only take one value.");
                return false;
            }
-           RHS *rhs = cp->rightHandSideValues;
-           switch (rhs->rhsType) {
-           case RHSType::Integer: {
-              int screenScale = rhs->intValue; 
+           ConfigValue *value = cp->values;
+           switch (value->type) {
+           case ConfigValueType::Integer: {
+              int screenScale = value->intValue; 
               //validate screenScale
               if (screenScale <= 0) {
-                  ALERT_EXIT("ScreenScale at line: %d, column %d in %s must be bound to a number greater than 0.", 
-                             cp->lhs.line, cp->lhs.posInLine, GBEMU_CONFIG_FILENAME);
+                  char *configKeyString = PUSHMCLR(cp->key.textFromFile.len + 1, char);
+                  AutoMemory am(configKeyString);
+                  copyMemory(cp->key.textFromFile.data, configKeyString, cp->key.textFromFile.len);
+                  ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a number greater than 0.", 
+                             configKeyString, cp->key.line, cp->key.posInLine, GBEMU_CONFIG_FILENAME);
                   return false;
               }
               programState->screenScale = screenScale;
            } break;
            default:  {
-               ALERT_EXIT("ScreenScale at line: %d, column %d in %s must be bound to a number greater than 0.", 
-                          cp->lhs.line, cp->lhs.posInLine, GBEMU_CONFIG_FILENAME);
+               char *configKeyString = PUSHMCLR(cp->key.textFromFile.len + 1, char);
+               AutoMemory am(configKeyString);
+               copyMemory(cp->key.textFromFile.data, configKeyString, cp->key.textFromFile.len);
+               ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a number greater than 0.", 
+                          configKeyString, cp->key.line, cp->key.posInLine, GBEMU_CONFIG_FILENAME);
                return false;
            } break;
            }
