@@ -76,7 +76,7 @@ Bug Notes:
     - Its supposed to be mode ScanOAM (mode 2).
     - Sticking in a NOP before waithblank fixes the problem. This implies something is taking 4 cycles less time than it should before hblank
     
-- Debug Pokemon Pinball
+- Debug Pokemon Pinball (FIXED)
     In FieldVerticalTransition: ; 0x6674:
            call ToggleAudioEngineUpdateMethod
            call DisableLCD  <---- This never returns.  Figure out why. 
