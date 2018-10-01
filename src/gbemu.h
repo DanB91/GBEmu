@@ -484,6 +484,7 @@ struct NotificationState {
 struct GameBoyDebug;
 
 
+#define NO_INPUT_MAPPING -1
 struct Input {
     enum class Action {
         Left = 0, Right, Up, Down,
@@ -495,6 +496,7 @@ struct Input {
 
         NumActions
     };
+    
 
     struct State {
         //emu controls
@@ -510,25 +512,37 @@ struct Input {
         //debug controls
         i32 mouseX, mouseY;
     };
-#define NO_INPUT_MAPPING -1
     struct Mapping {
         int code;
         Action action; 
     };
+    
+    struct CodeToActionMap {
+        Mapping *inputCodesToActions[64];
+    };
+    
     State newState;
     State oldState;
     
-    //TODO: hashmap to addresses of State booleans?
-    //Keyboard Mappings
-    Mapping *controllerMappings;
-    isize numControllerMappings;
-    Mapping *keyMappings;
-    isize numKeyMappings;
-    Mapping *ctrlKeyMappings;
-    isize numCtrlKeyMappings;
+    CodeToActionMap keysMap;
+    CodeToActionMap ctrlKeysMap;
+    CodeToActionMap controllerMap;
 
     //debug controls
 };
+static const char *inputActionToStr[] = {
+    "Left", "Right", "Up", "Down",
+    "A", "B", "Start", "Select",
+
+    "Rewind", "Continue", "Step", "Mute",
+    "Pause", "Reset", "ShowDebugger", "ShowHomePath",
+    "FullScreen",
+
+    "NumActions"
+};
+
+void registerInputMapping(int inputCode, Input::Action action, Input::CodeToActionMap *mappings);
+bool retrieveActionForInputCode(int inputCode, Input::Action *outAction, Input::CodeToActionMap *mappings);
 
 struct ProgramState {
     char loadedROMName[MAX_ROM_NAME_LEN + 1];
@@ -602,6 +616,39 @@ void reset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState
 
 #ifdef GB_IMPL
 #undef GB_IMPL
+void registerInputMapping(int inputCode, Input::Action action, Input::CodeToActionMap *mappings) {
+    u64 index = hashU64((u64)inputCode) & (ARRAY_LEN(mappings->inputCodesToActions) - 1);
+    Input::Mapping mapping;
+    mapping.code = inputCode;
+    mapping.action = action;
+    Input::Mapping **bucket = &mappings->inputCodesToActions[index];
+    isize bucketLen = (isize)buf_len(*bucket);
+    fori (bucketLen) {
+        if (inputCode == (*bucket)->code) {
+            (*bucket)->action = action;
+            return;
+        }
+    }
+
+    buf_malloc_push(*bucket, mapping);
+}
+bool retrieveActionForInputCode(int inputCode, Input::Action *outAction, Input::CodeToActionMap *mappings) {
+    u64 index = hashU64((u64)inputCode) & (ARRAY_LEN(mappings->inputCodesToActions) - 1);
+    Input::Mapping *bucket = mappings->inputCodesToActions[index];
+    if (bucket) {
+        isize bucketLen = (isize)buf_len(bucket);
+        fori (bucketLen) {
+           if (bucket[i].code == inputCode) {
+               if (outAction) {
+                   *outAction = bucket[i].action;
+               }
+               return true;
+           }
+        }
+    }
+    
+    return false;
+}
 bool pushNotification(const char *notification, int len, NotificationState *buffer) {
 
     if (buffer->numItemsQueued < MAX_NOTIFICATIONS) {

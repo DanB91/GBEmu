@@ -1,17 +1,13 @@
 Bugs/Optimization:
-    - check for duplicate configs
-    
     - Resizable window
     
     - tie .gb and .gbc files to app
     
-    - Fix bugs for gameboy demo
+    - Fix bugs for gameboy demo (let instruction execute on interrupt boundary?)
     
     - Look into how games use the RTC other than Pokemon
     
     - Optimize sound
-    
-    - Test on international keyboards
     
     - Optimize drawScanLine
         
@@ -34,6 +30,7 @@ Bugs/Optimization:
 
 Testing:
     - Check behavior if disk runs out of space.
+    - Test on international keyboards
 
 Code Style:
     - Nail down a consistancy of integer types

@@ -264,20 +264,18 @@ static HomeDirectoryOption showHomeDirectoryDialog(const char *defaultHomeDirPat
 }
 
 static void processKey(SDL_Keycode key, bool isDown, bool isCtrlDown, Input::State *input, 
-                       Input::Mapping *keyMappings, isize numKeyMappings, Input::Mapping *ctrlKeyMappings, isize numCtrlKeyMappings) {
+                       Input::CodeToActionMap *keysMap, Input::CodeToActionMap *ctrlKeysMap) {
     profileStart("process key", profileState);
     if (isCtrlDown) {
-        fori (numCtrlKeyMappings) {
-            if (key == ctrlKeyMappings[i].code) {
-               input->actionsHit[(int)ctrlKeyMappings[i].action] = isDown; 
-            }
+        Input::Action action;
+        if (retrieveActionForInputCode(key, &action, ctrlKeysMap)) {
+            input->actionsHit[(int)action] = isDown; 
         }
     }
     else {
-        fori (numKeyMappings) {
-            if (key == keyMappings[i].code) {
-               input->actionsHit[(int)keyMappings[i].action] = isDown; 
-            }
+        Input::Action action;
+        if (retrieveActionForInputCode(key, &action, keysMap)) {
+            input->actionsHit[(int)action] = isDown; 
         }
     }
 
@@ -315,11 +313,10 @@ static void processKey(SDL_Keycode key, bool isDown, bool isCtrlDown, Input::Sta
 }
 
 
-static void processButton(int button, bool isDown, Input::State *input, Input::Mapping *controllerMappings, isize numControllerMappings) {
-    fori (numControllerMappings) {
-        if (button == controllerMappings[i].code) {
-            input->actionsHit[(int)controllerMappings[i].action] = isDown; 
-        }
+static void processButton(int button, bool isDown, Input::State *input, Input::CodeToActionMap *controllerMap) {
+    Input::Action action;
+    if (retrieveActionForInputCode(button, &action, controllerMap)) {
+        input->actionsHit[(int)action] = isDown; 
     }
 }
 
@@ -731,67 +728,70 @@ static bool backupCartRAMFile(const char *fileNameToBackup, const char *extensio
 
 static bool handleInputMappingFromConfig(Input *input, Input::Action action,
                                          ConfigKey *configKey, ConfigValue *configValues, isize numConfigValues) {
-    Input::Mapping mapping;
+    int code;
     fori (numConfigValues) {
-        ConfigValue *rhs = &configValues[i];
-        switch (rhs->type) {
+        ConfigValue *configValue = &configValues[i];
+        switch (configValue->type) {
         case ConfigValueType::ControllerMapping: {
-            switch (rhs->controllerMapping.value) {
+            switch (configValue->controllerMapping.value) {
             case ControllerMappingValue::LeftTrigger: {
-                mapping.code = (int)PlatformControllerTriggerMapping::LeftTrigger; 
+                code = (int)PlatformControllerTriggerMapping::LeftTrigger;
             } break;
             case ControllerMappingValue::RightTrigger: {
-                mapping.code = (int)PlatformControllerTriggerMapping::RightTrigger; 
+                code = (int)PlatformControllerTriggerMapping::RightTrigger;
             } break;
             default:
-                mapping.code = controllerMappingToSDLButton[(int)rhs->controllerMapping.value];
+                code = controllerMappingToSDLButton[(int)configValue->controllerMapping.value];
                 break;
             }
-            mapping.action = action;
-            buf_malloc_push(input->controllerMappings, mapping);
+            
+            Input::Action boundAction;
+            if (retrieveActionForInputCode(code, &boundAction, &input->controllerMap)) {
+                char *configValueString = PUSHMCLR(configValue->textFromFile.len + 1, char);
+                AutoMemory am(configValueString);
+                copyMemory(configValue->textFromFile.data, configValueString, configValue->textFromFile.len);
+                ALERT_EXIT("In %s: '%s' cannot be bound multiple to emulator actions ('%s' and '%s').",
+                           GBEMU_CONFIG_FILENAME, configValueString,
+                           inputActionToStr[(int)boundAction], inputActionToStr[(int)action]);
+                return false;
+            }
+            registerInputMapping(code, action, &input->controllerMap);
         } break;
         case ConfigValueType::KeyMapping: {
-            if (rhs->keyMapping.isCtrlHeld) {
-                switch (rhs->keyMapping.type) {
-                case KeyMappingType::Character: {
-                    mapping.code = rhs->keyMapping.characterValue; 
-                } break;
-                case KeyMappingType::MovementKey: {
-                    SDL_Keycode sdlCode = movementKeyMappingToSDLKeyCode[(int)rhs->keyMapping.movementKeyValue]; 
-                    mapping.code = sdlCode;
-                } break;
-                }
-                mapping.action = action;
-                buf_malloc_push(input->ctrlKeyMappings, mapping);
+            switch (configValue->keyMapping.type) {
+            case KeyMappingType::Character: {
+                code = configValue->keyMapping.characterValue;
+            } break;
+            case KeyMappingType::MovementKey: {
+                SDL_Keycode sdlCode = movementKeyMappingToSDLKeyCode[(int)configValue->keyMapping.movementKeyValue];
+                code = sdlCode;
+            } break;
             }
-            else {
-                switch (rhs->keyMapping.type) {
-                case KeyMappingType::Character: {
-                    mapping.code = rhs->keyMapping.characterValue; 
-                } break;
-                case KeyMappingType::MovementKey: {
-                    SDL_Keycode sdlCode = movementKeyMappingToSDLKeyCode[(int)rhs->keyMapping.movementKeyValue]; 
-                    mapping.code = sdlCode; 
-                } break;
-                }
-                mapping.action = action;
-                buf_malloc_push(input->keyMappings, mapping);
+            auto map = (configValue->keyMapping.isCtrlHeld) ?
+                                    &input->ctrlKeysMap : &input->keysMap;
+            Input::Action boundAction;
+            if (retrieveActionForInputCode(code, &boundAction, map)) {
+                char *configValueString = PUSHMCLR(configValue->textFromFile.len + 1, char);
+                AutoMemory am(configValueString);
+                copyMemory(configValue->textFromFile.data, configValueString, configValue->textFromFile.len);
+                ALERT_EXIT("In %s: '%s' cannot be bound multiple to emulator actions ('%s' and '%s').",
+                           GBEMU_CONFIG_FILENAME, configValueString,
+                           inputActionToStr[(int)boundAction], inputActionToStr[(int)action]);
+                return false;
             }
+            registerInputMapping(code, action, map );
         } break;
         default: {
             char *configKeyString = PUSHMCLR(configKey->textFromFile.len + 1, char);
             AutoMemory am(configKeyString);
             copyMemory(configKey->textFromFile.data, configKeyString, configKey->textFromFile.len);
-            ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a controller or key mapping.", 
+            ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a controller or key mapping.",
                        configKeyString, configKey->line, configKey->posInLine, GBEMU_CONFIG_FILENAME);
             return false;
         } break;
         }
     }
-    input->numControllerMappings = (isize)buf_len(input->controllerMappings);
-    input->numCtrlKeyMappings = (isize)buf_len(input->ctrlKeyMappings);
-    input->numKeyMappings = (isize) buf_len(input->keyMappings);
-    
+
     return true;
 
 }
@@ -893,7 +893,6 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     
     Input *input = &programState->input;
     
-    input->keyMappings = input->controllerMappings = input->ctrlKeyMappings = nullptr;
     fori (result.numConfigPairs) {
 #define CASE_MAPPING(mapping)  case ConfigKeyType::mapping: {\
             if (!handleInputMappingFromConfig(input,\
@@ -1410,20 +1409,20 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
 
                 case SDL_KEYDOWN: {
                     processKey(e.key.keysym.sym, true, (keyMod & CTRL_KEY) != 0, &input->newState, 
-                               input->keyMappings, input->numKeyMappings, input->ctrlKeyMappings, input->numCtrlKeyMappings);
+                               &input->keysMap, &input->ctrlKeysMap);
                     
                 } break;
 
                 case SDL_KEYUP: {
                     processKey(e.key.keysym.sym, false, (keyMod & CTRL_KEY) != 0, &input->newState, 
-                               input->keyMappings, input->numKeyMappings, input->ctrlKeyMappings, input->numCtrlKeyMappings);
+                               &input->keysMap, &input->ctrlKeysMap);
                 } break;
 
                 case SDL_CONTROLLERBUTTONUP:  
                 case SDL_CONTROLLERBUTTONDOWN:  {
                     if (*controller && e.cbutton.which == controllerID) {
                         processButton((SDL_GameControllerButton)e.cbutton.button, e.type == SDL_CONTROLLERBUTTONDOWN, &input->newState,
-                                      input->controllerMappings, input->numControllerMappings);
+                                      &input->controllerMap);
                     }
                     
                 } break;
@@ -1433,51 +1432,51 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                         case SDL_CONTROLLER_AXIS_LEFTX: {
                             input->newState.xAxis = e.caxis.value;
                             if (e.caxis.value < ANALOG_STICK_DEADZONE && e.caxis.value > -ANALOG_STICK_DEADZONE) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, input->controllerMappings, input->numControllerMappings);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState,input->controllerMappings, input->numControllerMappings);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->controllerMap);
                             }
                             else if (e.caxis.value >= ANALOG_STICK_DEADZONE && 
                                      e.caxis.value > abs(input->newState.yAxis)) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState,input->controllerMappings, input->numControllerMappings);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, true, &input->newState,input->controllerMappings, input->numControllerMappings);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, true, &input->newState, &input->controllerMap);
                             }
                             else if (e.caxis.value <= -ANALOG_STICK_DEADZONE && 
                                      abs(e.caxis.value) > abs(input->newState.yAxis)) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, true, &input->newState,input->controllerMappings, input->numControllerMappings);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState,input->controllerMappings, input->numControllerMappings);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, true, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->controllerMap);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_LEFTY: {
                             input->newState.yAxis = e.caxis.value;
                             if (e.caxis.value < ANALOG_STICK_DEADZONE && e.caxis.value > -ANALOG_STICK_DEADZONE) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, input->controllerMappings, input->numControllerMappings);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, input->controllerMappings, input->numControllerMappings);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->controllerMap);
                             }
                             else if (e.caxis.value >= ANALOG_STICK_DEADZONE && 
                                      e.caxis.value > abs(input->newState.xAxis)) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, input->controllerMappings, input->numControllerMappings);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true, &input->newState, input->controllerMappings, input->numControllerMappings);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true, &input->newState, &input->controllerMap);
                             }
                             else if (e.caxis.value <= -ANALOG_STICK_DEADZONE && 
                                      abs(e.caxis.value) > abs(input->newState.xAxis)) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, true, &input->newState, input->controllerMappings, input->numControllerMappings);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, input->controllerMappings, input->numControllerMappings);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, true, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->controllerMap);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_TRIGGERLEFT: {
                             if (e.caxis.value > ANALOG_STICK_DEADZONE) {
-                                processButton((int)PlatformControllerTriggerMapping::LeftTrigger, true, &input->newState, input->controllerMappings, input->numControllerMappings);
+                                processButton((int)PlatformControllerTriggerMapping::LeftTrigger, true, &input->newState, &input->controllerMap);
                             }
                             else if (e.caxis.value <= ANALOG_STICK_DEADZONE) {
-                                processButton((int)PlatformControllerTriggerMapping::LeftTrigger, false, &input->newState, input->controllerMappings, input->numControllerMappings);
+                                processButton((int)PlatformControllerTriggerMapping::LeftTrigger, false, &input->newState, &input->controllerMap);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: {
                             if (e.caxis.value > ANALOG_STICK_DEADZONE) {
-                                processButton((int)PlatformControllerTriggerMapping::RightTrigger, true, &input->newState, input->controllerMappings, input->numControllerMappings);
+                                processButton((int)PlatformControllerTriggerMapping::RightTrigger, true, &input->newState, &input->controllerMap);
                             }
                             else if (e.caxis.value <= ANALOG_STICK_DEADZONE) {
-                                processButton((int)PlatformControllerTriggerMapping::RightTrigger, false, &input->newState, input->controllerMappings, input->numControllerMappings);
+                                processButton((int)PlatformControllerTriggerMapping::RightTrigger, false, &input->newState, &input->controllerMap);
                             }
                         } break;
                         }
@@ -1784,7 +1783,7 @@ int main(int argc, char **argv) {
             alertDialog("Not enough memory to run the emulator!");
             goto exit;
         }
-        programState = PUSHM(1, ProgramState);
+        programState = PUSHMCLR(1, ProgramState);
         //TODO: default mappings
 //        foriarr (programState->input.inputMappingConfig.inputMappings) {
 //            InputMapping *im = programState->input.inputMappingConfig.inputMappings + i;

@@ -360,7 +360,10 @@ static ParserStatus configValue(ConfigValue *outConfigValue) {
 
     if (isToken(ConfigTokenType::KeyKW))  {
         outConfigValue->type = ConfigValueType::KeyMapping;
+        outConfigValue->textFromFile = currentToken.value;
         nextToken();
+        outConfigValue->textFromFile.len += (currentToken.value.data - outConfigValue->textFromFile.data - 
+                                             outConfigValue->textFromFile.len) + currentToken.value.len;
         auto res = keyMapping(&outConfigValue->keyMapping);
         if (res != ParserStatus::OK) {
             return res;
@@ -368,7 +371,10 @@ static ParserStatus configValue(ConfigValue *outConfigValue) {
     }
     else if (isToken(ConfigTokenType::ControllerKW)) {
         outConfigValue->type = ConfigValueType::ControllerMapping;
+        outConfigValue->textFromFile = currentToken.value;
         nextToken();
+        outConfigValue->textFromFile.len += (currentToken.value.data - outConfigValue->textFromFile.data - 
+                                             outConfigValue->textFromFile.len) + currentToken.value.len;
         auto res = controllerMapping(&outConfigValue->controllerMapping);
         if (res != ParserStatus::OK) {
             return res;
@@ -377,17 +383,17 @@ static ParserStatus configValue(ConfigValue *outConfigValue) {
     else if (isToken(ConfigTokenType::Integer)) {
         outConfigValue->type = ConfigValueType::Integer;
         outConfigValue->intValue = createIntFromCurrentToken();
+        outConfigValue->textFromFile = currentToken.value;
     }
     else {
         return ParserStatus::BadRHSToken;
     }
     
-    outConfigValue->textFromFile = currentToken.value;
     nextToken();
     return ParserStatus::OK;
 }
 
-static ParserStatus lhs(ConfigKey *outConfigKey) {
+static ParserStatus configKey(ConfigKey *outConfigKey) {
     outConfigKey->line = currentToken.line;
     outConfigKey->posInLine = currentToken.posInLine;
     if (isToken(ConfigTokenType::Identifier)) {
@@ -465,7 +471,7 @@ static ParserStatus pair(ConfigPair **outputPairs) {
     ConfigValue tmpRHS;
     configPair.values = nullptr;
     
-    auto res = lhs(&configPair.key);
+    auto res = configKey(&configPair.key);
     if (res != ParserStatus::OK) {
         return res;
     }

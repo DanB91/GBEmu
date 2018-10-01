@@ -350,8 +350,7 @@ fillMemory(void* memory, u8 fillValue, i64 lenInBytes) {
     }
 }
 
-inline void
-fillMemory(i16* memory, i16 fillValue, i64 lenInBytes) {
+inline void fillMemory(i16* memory, i16 fillValue, i64 lenInBytes) {
     CO_ASSERT((lenInBytes % (i64)sizeof(i16)) == 0);
     i16* bytes = (i16*)memory;
 
@@ -360,14 +359,16 @@ fillMemory(i16* memory, i16 fillValue, i64 lenInBytes) {
     }
 }
 
-inline void
-zeroMemory(void* memory, i64 lenInBytes) {
+inline void zeroMemory(void* memory, i64 lenInBytes) {
     fillMemory(memory, (u8)0, lenInBytes);
 }
 
+//used for hash tables
+u64 hashU64(u64 key);
+
 struct BufHdr {
-    size_t len;
-    size_t cap;
+    usize len;
+    usize cap;
     char buf[];
 };
 
@@ -867,6 +868,13 @@ AutoMemory::~AutoMemory() {
     POPMSTACK(memory, stack);
 }
 
+u64 hashU64(u64 key)  {
+    key ^= (key >> 33);
+    key *= 0xff51afd7ed558ccd;
+    key ^= (key >> 33);
+
+    return key;
+}
 void *buf__grow(AllocatorFn *allocator, ReallocateFn *reallocator, const void *buf, size_t new_len, size_t elem_size) {
     CO_ASSERT(buf_cap(buf) <= (SIZE_MAX - 1)/2);
     size_t new_cap = MAX(16, MAX(1 + 2*buf_cap(buf), new_len));
