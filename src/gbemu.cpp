@@ -16,8 +16,6 @@
 #define SCAN_OAM_DURATION 80
 #define SCAN_VRAM_AND_OAM_DURATION 172
 
-
-
 static bool
 shouldBreakOnPC(u16 PC, GameBoyDebug *gbDebug, Breakpoint **hitBreakpoint) {
     if (!gbDebug->isEnabled || gbDebug->numBreakpoints <= 0)  {

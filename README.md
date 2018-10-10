@@ -15,21 +15,21 @@ GBEmu supports both keyboard and controller input.  Any controller supported by 
 There is a bunch of functionality available on the keyboard that is not currently mapped to the controller (e.g. pausing emulation).  More thought needs to be put into how it should map to the controller.
 
 #### Keyboard
-The following mapping is based on the US QWERTY keyboard:
+The following mappings are the default keyboard mappings (they have changed since version 0.0.1).  They can be changed in **config.txt**:
 
-- `W S A D` -- Up, Down, Left, Right, respectively
-- `/ .` -- A, B, respectively
+- `W S A D` -- Up, Down, Left, and Right, respectively
+- `/ .` -- A and B, respectively
 - `Enter \` -- Start, Select, respectively
-- `P` -- Pause and unpause emulation
-- `Ctrl (Command on Mac) - R` -- Reset emulation
-- `Ctrl (Command on Mac) - F` -- Toggle fullscreen
 - `Left Arrow` -- Rewind
-- `M` -- Mute sound
-- `H` -- Briefly display **Home Directory** in the title bar
-- `B` -- Launch debugger screen
-- `0 to 9` -- Load saved state from slots 0 to 9
 - `N` -- Next instruction when emulator is paused, including when a breakpoint is hit.
 - `C` -- Continue from breakpoint.
+- `Ctrl (Command on Mac) - P` -- Pause and unpause emulation
+- `Ctrl (Command on Mac) - R` -- Reset emulation
+- `Ctrl (Command on Mac) - F` -- Toggle fullscreen
+- `Ctrl (Command on Mac) - M` -- Mute sound
+- `Ctrl (Command on Mac) - H` -- Briefly display **Home Directory** in the title bar
+- `Ctrl (Command on Mac) - B` -- Launch debugger screen
+- `0 to 9` -- Load saved state from slots 0 to 9
 - `Ctrl (Command on Mac) - 0 to 9` -- Save current states 0 to 9
 
 #### Controller

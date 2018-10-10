@@ -1,4 +1,5 @@
 Bugs/Optimization:
+    - Swap old and new input pointers instead of copying (Profile first)
     - Resizable window
     
     - tie .gb and .gbc files to app

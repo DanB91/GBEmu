@@ -513,12 +513,17 @@ struct Input {
         i32 mouseX, mouseY;
     };
     struct Mapping {
-        int code;
+        UTF32Character code;
         Action action; 
+    };
+    struct MappingBucketNode {
+        Mapping *mapping;
     };
     
     struct CodeToActionMap {
-        Mapping *inputCodesToActions[64];
+        //TODO: keys and values in separate arrays?
+        Mapping *mappings;
+        Mapping *buckets[64];
     };
     
     State newState;
@@ -617,27 +622,34 @@ void reset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState
 #ifdef GB_IMPL
 #undef GB_IMPL
 void registerInputMapping(int inputCode, Input::Action action, Input::CodeToActionMap *mappings) {
-    u64 index = hashU64((u64)inputCode) & (ARRAY_LEN(mappings->inputCodesToActions) - 1);
+    u64 index = hashU64((u64)inputCode) & (ARRAY_LEN(mappings->buckets) - 1);
     Input::Mapping mapping;
     mapping.code = inputCode;
     mapping.action = action;
-    Input::Mapping **bucket = &mappings->inputCodesToActions[index];
-    isize bucketLen = (isize)buf_len(*bucket);
-    fori (bucketLen) {
-        if (inputCode == (*bucket)->code) {
-            (*bucket)->action = action;
+    
+    Input::Mapping *bucket = mappings->buckets[index];
+    //modify existing
+    foribuf (bucket) {
+        if (inputCode == bucket[i].code) {
+            bucket[i].action = action;
+            foribuf (mappings->mappings) {
+                if (inputCode == bucket[i].code) {
+                    bucket[i].action = action;
+                }
+            }
             return;
         }
     }
 
-    buf_malloc_push(*bucket, mapping);
+    buf_malloc_push(mappings->mappings, mapping);
+    buf_malloc_push(bucket, mapping);
+    mappings->buckets[index] = bucket;
 }
 bool retrieveActionForInputCode(int inputCode, Input::Action *outAction, Input::CodeToActionMap *mappings) {
-    u64 index = hashU64((u64)inputCode) & (ARRAY_LEN(mappings->inputCodesToActions) - 1);
-    Input::Mapping *bucket = mappings->inputCodesToActions[index];
+    u64 index = hashU64((u64)inputCode) & (ARRAY_LEN(mappings->buckets) - 1);
+    Input::Mapping *bucket = mappings->buckets[index];
     if (bucket) {
-        isize bucketLen = (isize)buf_len(bucket);
-        fori (bucketLen) {
+        foribuf (bucket) {
            if (bucket[i].code == inputCode) {
                if (outAction) {
                    *outAction = bucket[i].action;

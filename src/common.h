@@ -63,6 +63,7 @@ typedef void (TimerFn)(void*);
 #define ARRAY_LEN(array) ((i32)(sizeof(array)/sizeof(*array)))
 #define UNUSED(x) ((void)(x))
 #define fori(x) for (isize i = 0; i < (x); i++)
+#define foribuf(x) for (isize i = 0; i < ((isize)buf_len(x)); i++)
 #define forj(x) for (isize j = 0; j < (x); j++)
 #define foriarr(x) fori(ARRAY_LEN(x))
 #define forjarr(x) forj(ARRAY_LEN(x))
@@ -71,13 +72,13 @@ typedef void (TimerFn)(void*);
 #define globalvar static
 #define ALERT(fmt, ...)  do {\
     char *msg = nullptr;\
-    buf_gen_memory_printf(msg, fmt, ##__VA_ARGS__);\
+    buf_gen_memory_printf(msg, fmt,##__VA_ARGS__);\
     CO_ERR(fmt, ##__VA_ARGS__);\
     alertDialog(msg);\
     buf_gen_memory_free(msg);\
 }while(0)
 
-#define ALERT_EXIT(fmt, ...) ALERT(fmt" Exiting...", ##__VA_ARGS__)
+#define ALERT_EXIT(fmt, ...) ALERT(fmt" Exiting...",##__VA_ARGS__)
 
 #define GB(n) (MB(n) * 1024)
 #define MB(n) (KB(n) * 1024)
@@ -341,6 +342,15 @@ int stringLength(const char *str, int maxAmount);
 void copyString(const char *src, char *dest, i64 lenInBytes);
 bool isEmptyString(const char *str);
 
+union UTF8Character {
+    u64 data;
+    u8 bytes[8];    
+    char string[8];    
+};
+typedef i32 UTF32Character;
+UTF8Character utf8FromUTF32(UTF32Character codePoint);
+UTF32Character utf32FromUTF8(UTF8Character utf8Char);
+
 inline void
 fillMemory(void* memory, u8 fillValue, i64 lenInBytes) {
     u8* bytes = (u8*)memory;
@@ -366,16 +376,21 @@ inline void zeroMemory(void* memory, i64 lenInBytes) {
 //used for hash tables
 u64 hashU64(u64 key);
 
+//buf functions mostly gotten from https://github.com/pervognsen/bitwise/blob/768d59579a82944018ae4161b8f6d445be225edf/ion/common.c
 struct BufHdr {
     usize len;
     usize cap;
     char buf[];
 };
 
+#define buf_malloc_string(s) buf__strcat(chkMalloc, chkRealloc, (nullptr), (s))
 #define buf_malloc_printf(b, ...) buf_printf(chkMalloc, chkRealloc, b, __VA_ARGS__) 
+#define buf_malloc_strcat(dest, src) (dest = buf__strcat(chkMalloc, chkRealloc, (dest), (src))) 
 #define buf_malloc_push(b, ...) buf_push(chkMalloc, chkRealloc, b, __VA_ARGS__) 
 #define buf_malloc_free(b) ((b) ? (free(buf__hdr(b)), (b) = NULL) : 0)
 #define buf_gen_memory_printf(b, ...) buf_printf(_buf_pushMemory, _buf_resizeMemory, b, __VA_ARGS__) 
+#define buf_gen_memory_string(s) buf__strcat(_buf_pushMemory, _buf_resizeMemory, (nullptr), (s))
+#define buf_gen_memory_strcat(dest, src) (dest = buf__strcat(_buf_pushMemory, _buf_resizeMemory, (dest), (src)))
 #define buf_gen_memory_push(b, ...) buf_push(_buf_pushMemory, _buf_resizeMemory, b, __VA_ARGS__) 
 #define buf_gen_memory_free(b) ((b) ? (POPM(buf__hdr(b)), (b) = NULL) : 0)
 
@@ -717,6 +732,80 @@ bool isSubstringCaseInsensitive(const char *needle, char *haystack, i64 haystack
     return false;
 }
 
+UTF8Character utf8FromUTF32(UTF32Character codepoint) {
+//    If U <= U+007F, then
+//    C1 = U
+//    Else if U+0080 <= U <= U+07FF, then
+//    C1 = U/64 + 192
+//    C2 = U mod 64 + 128
+//    Else if U+0800 <= U <= U+D7FF, or if U+E000 <= U <= U+FFFF, then
+//    C1 = U/4,096 + 224
+//    C2 = (U mod 4,096)/64 + 128
+//    C3 = U mod 64 + 128
+//    Else
+//    C1 = U/262,144 + 240
+//    C2 = (U mod 262,144)/4,096 + 128
+//    C3 = (U mod 4,096)/64 + 128
+//    C4 = U mod 64 + 128
+//    End if
+    UTF8Character utf8Char = {};
+    if (codepoint <= 0x7F) {
+        utf8Char.bytes[0] = (u8)codepoint;
+    }
+    else if (codepoint >= 0x80 && codepoint <= 0x7FF) {
+       utf8Char.bytes[0] = (u8)(codepoint/64 + 192);
+       utf8Char.bytes[1] = (u8)((codepoint % 64) + 128);
+    }
+    else if ((codepoint >= 0x800 && codepoint <= 0xD7FF) ||
+             (codepoint >= 0xE000 && codepoint <= 0xFFFF)) {
+        
+       utf8Char.bytes[0] = (u8)(codepoint/4096 + 224);
+       utf8Char.bytes[1] = (u8)(((codepoint % 4096)/64) + 128);
+       utf8Char.bytes[2] = (u8)((codepoint % 64) + 128);
+    }
+    else {
+       utf8Char.bytes[0] = (u8)(codepoint/262144 + 240);
+       utf8Char.bytes[1] = (u8)(((codepoint % 262144)/4096) + 128);
+       utf8Char.bytes[2] = (u8)((codepoint % 4096)/64 + 128);
+       utf8Char.bytes[3] = (u8)((codepoint % 64) + 128);
+        
+    }
+    return utf8Char;
+}
+UTF32Character utf32FromUTF8(UTF8Character utf8Char) {
+    
+//    If a sequence has one byte, then
+//    U = C1
+//    Else if a sequence has two bytes, then
+//    U = (C1 – 192) * 64 + C2 – 128
+//    Else if a sequence has three bytes, then
+//    U = (C1 – 224) * 4,096 + (C2 – 128) * 64 + C3 – 128
+//    Else
+//    U = (C1 – 240) * 262,144 + (C2 – 128) * 4,096 + (C3 – 128) * 64 + C4 – 128
+//    End if
+    if ((utf8Char.bytes[0] & 0x80) == 0) {
+        //1 byte
+       return utf8Char.bytes[0]; 
+    }
+    else if ((utf8Char.bytes[0] & 0xE0) == 0xC0) {
+       //2 bytes 
+       return  (utf8Char.bytes[0] - 192) * 64 + (utf8Char.bytes[1] - 128);
+    }
+    else if ((utf8Char.bytes[0] & 0xF0) == 0xE0) {
+        //3 bytes
+       return  (utf8Char.bytes[0] - 224) * 4096 + 
+               (utf8Char.bytes[1] - 128) * 64 + 
+               (utf8Char.bytes[2] - 128);
+    }
+    else {
+        //4 bytes
+       return  (utf8Char.bytes[0] - 240) * 262144 + 
+               (utf8Char.bytes[1] - 128) * 4096 + 
+               (utf8Char.bytes[2] - 128) * 64 +
+               (utf8Char.bytes[3] - 128);
+    }
+}
+
 bool areStringsEqual(const char *lhs, const char *rhs, i64 lenInBytes) {
     fori (lenInBytes) {
         if (*lhs != *rhs) {
@@ -898,6 +987,7 @@ char *buf__printf(AllocatorFn *allocator, ReallocateFn *reallocator, char *buf, 
     size_t n = 1 + (size_t)vsnprintf(buf_end(buf), cap, fmt, args);
 
     va_end(args);
+    
     if (n > cap) {
         buf_fit(allocator, reallocator, buf, n + buf_len(buf));
         va_start(args, fmt);
@@ -908,6 +998,17 @@ char *buf__printf(AllocatorFn *allocator, ReallocateFn *reallocator, char *buf, 
     }
     buf__hdr(buf)->len += n - 1;
     return buf;
+}
+char *buf__strcat(AllocatorFn *allocator, ReallocateFn *reallocator, char *dest, const char *src) {
+    usize newLen = strlen(src) + buf_len(dest) + 1;
+    buf_fit(allocator, reallocator, dest, newLen);
+    if (buf_len(dest) == 0 && buf_cap(dest) > 0) {
+       dest[0] = '\0'; 
+    }
+    char *ret = strncat(dest, src, newLen);
+    buf__hdr(ret)->len = newLen - 1;
+    CO_ASSERT_EQ(strlen(dest), buf_len(dest));
+    return ret;
 }
 
 void freeFileBuffer(ReadFileResult* fileDataToFree, MemoryStack *fileMemory) {

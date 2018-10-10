@@ -26,7 +26,7 @@ enum class ConfigKeyType{
 
 struct NonNullTerminatedString {
     char *data;
-    i64 len; 
+    isize len; 
 };
 struct ConfigKey {
     NonNullTerminatedString textFromFile;
@@ -56,11 +56,12 @@ struct KeyMapping {
     union {
         MovementKeyMappingValue movementKeyValue;
         int intValue;
-        int characterValue;
+        UTF8Character characterValue;
     };
     bool isCtrlHeld;
     int posInLine;
     int line;
+    NonNullTerminatedString textFromFile;
 };
 struct ControllerMapping {
    ControllerMappingValue value; 

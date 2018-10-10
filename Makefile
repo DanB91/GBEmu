@@ -72,7 +72,7 @@ build/gbemu.so: $(GAME_OBJ) build/imgui-fpic.o FORCE
 build/gbemu_release: $(PLATFORM_OBJ) 
 	$(CC) $(PLATFORM_OBJ) $(LDFLAGS) -ldl -o $@
 	@mv $@ build/gbemu
-build/test: src/tests/configFileTest.cpp FORCE
+build/test: src/tests/unitTests.cpp FORCE
 	$(CC) -o $@ $< $(CPPFLAGS)
 	build/test
 
