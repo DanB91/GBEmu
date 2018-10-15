@@ -42,7 +42,7 @@ release: ctime_begin  generate_version build build/gbemu_release ctime_end
 
 debug: CPPFLAGS+=-DCO_DEBUG -DCO_PROFILE -g
 debug: FPIC+=-fPIC
-debug: ctime_begin build build/gbemu build/gbemu.so ctime_end
+debug: ctime_begin generate_version build build/gbemu build/gbemu.so ctime_end
 
 test: build/test
 

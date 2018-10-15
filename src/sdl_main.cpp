@@ -62,12 +62,6 @@
     
 #define ANALOG_STICK_DEADZONE 8000
     
-//using negative numbers as to not conflict with SDL codes
-enum class PlatformControllerTriggerMapping {
-    LeftTrigger = NO_INPUT_MAPPING - 1,
-    RightTrigger = NO_INPUT_MAPPING - 2,
-};
-
 #ifdef MAC 
 #   define CTRL "Command-"
 #else
@@ -88,10 +82,10 @@ static const char *resultCodeToString[] = {
 static const char *movementKeyMappingToString[] = {
   [(int)MovementKeyMappingValue::Backspace] = "Backspace", 
   [(int)MovementKeyMappingValue::Enter] = "Enter", 
-  [(int)MovementKeyMappingValue::Down] = "Down", 
-  [(int)MovementKeyMappingValue::Up] = "Up", 
-  [(int)MovementKeyMappingValue::Left] = "Left", 
-  [(int)MovementKeyMappingValue::Right] = "Right", 
+  [(int)MovementKeyMappingValue::Down] = "Down Arrow", 
+  [(int)MovementKeyMappingValue::Up] = "Up Arrow", 
+  [(int)MovementKeyMappingValue::Left] = "Left Arrow", 
+  [(int)MovementKeyMappingValue::Right] = "Right Arrow", 
   [(int)MovementKeyMappingValue::SpaceBar] = "Space Bar", 
   [(int)MovementKeyMappingValue::Tab] = "Tab", 
 };
@@ -125,6 +119,32 @@ static const int controllerMappingToSDLButton[] = {
   [(int)ControllerMappingValue::Back] = SDL_CONTROLLER_BUTTON_BACK,  
     
   [(int)ControllerMappingValue::Home] = SDL_CONTROLLER_BUTTON_GUIDE,  
+    
+//using negative numbers as to not conflict with SDL codes
+  [(int)ControllerMappingValue::LeftTrigger] = NO_INPUT_MAPPING - 1,
+  [(int)ControllerMappingValue::RightTrigger] = NO_INPUT_MAPPING - 2,
+};
+static const char *controllerMappingToString[] = {
+  [(int)ControllerMappingValue::A] = "A Button",  
+  [(int)ControllerMappingValue::B] = "B Button",  
+  [(int)ControllerMappingValue::X] = "X Button",  
+  [(int)ControllerMappingValue::Y] = "Y Button",  
+    
+  [(int)ControllerMappingValue::Up] = "D-Pad Up",  
+  [(int)ControllerMappingValue::Down] = "D-Pad Down",  
+  [(int)ControllerMappingValue::Left] = "D-Pad Left",  
+  [(int)ControllerMappingValue::Right] = "D-Pad Right",  
+  
+  [(int)ControllerMappingValue::LeftBumper] = "Left Bumper",  
+  [(int)ControllerMappingValue::RightBumper] = "Right Bumper",  
+    
+  [(int)ControllerMappingValue::Start] = "Start Button",  
+  [(int)ControllerMappingValue::Back] = "Back Button",  
+    
+  [(int)ControllerMappingValue::Home] = "Guide Button",  
+    
+  [(int)ControllerMappingValue::LeftTrigger] = "Left Trigger",  
+  [(int)ControllerMappingValue::RightTrigger] = "Right Trigger",  
 };
 
 static const char *actionToString[(int)Input::Action::NumActions] = {
@@ -144,7 +164,8 @@ static const char *actionToString[(int)Input::Action::NumActions] = {
     [(int)Input::Action::Pause] = "Pause Emulator",
     [(int)Input::Action::Reset] = "Reset Emulator",  
     [(int)Input::Action::ShowDebugger] = "Show Debugger",  
-    [(int)Input::Action::FullScreen] = "Make Full Screen"  
+    [(int)Input::Action::FullScreen] = "Make Full Screen",  
+    [(int)Input::Action::ShowInputMap] = "Show This Message"  
 };
 
 bool openFileDialogAtPath(const char *path, char *outPath);
@@ -267,20 +288,61 @@ static HomeDirectoryOption showHomeDirectoryDialog(const char *defaultHomeDirPat
     return (success && pressedButton != -1) ? (HomeDirectoryOption)pressedButton : HomeDirectoryOption::EXIT;
 }
 
-static void processKey(SDL_Keycode key, bool isDown, bool isCtrlDown, Input::State *input, 
+static void processKeyUp(SDL_Keycode key, Input::State *input, 
+                       Input::CodeToActionMap *keysMap, Input::CodeToActionMap *ctrlKeysMap) {
+   
+    profileStart("process key up", profileState);
+    Input::Action action;
+    if (retrieveActionForInputCode(key, &action, ctrlKeysMap)) {
+        input->actionsHit[(int)action] = false; 
+    }
+    if (retrieveActionForInputCode(key, &action, keysMap)) {
+        input->actionsHit[(int)action] = false; 
+    }
+
+    switch (key) {
+    case SDLK_0: 
+    case SDLK_1:   
+    case SDLK_2:   
+    case SDLK_3:   
+    case SDLK_4:   
+    case SDLK_5:   
+    case SDLK_6:   
+    case SDLK_7:   
+    case SDLK_8:   
+    case SDLK_9: {
+        input->slotToRestoreOrSave = (key == SDLK_0) ? 0 : (key - SDLK_1 + 1);
+        input->saveState = false;
+        input->restoreState = false;
+    } break;
+    case SDLK_ESCAPE: {
+        input->escapeFullScreen = false;
+    } break;
+    case SDLK_KP_ENTER:
+    case SDLK_RETURN: {
+       input->enterPressed = false; 
+    } break;
+    default:
+        //do nothing
+        break;
+    }
+    profileEnd(profileState);
+}
+static void processKeyDown(SDL_Keycode key,  bool isCtrlDown, Input::State *input, 
                        Input::CodeToActionMap *keysMap, Input::CodeToActionMap *ctrlKeysMap) {
    
     profileStart("process key", profileState);
+    //TODO: don't test for ctrl down if lifting up
     if (isCtrlDown) {
         Input::Action action;
         if (retrieveActionForInputCode(key, &action, ctrlKeysMap)) {
-            input->actionsHit[(int)action] = isDown; 
+            input->actionsHit[(int)action] = true; 
         }
     }
     else {
         Input::Action action;
         if (retrieveActionForInputCode(key, &action, keysMap)) {
-            input->actionsHit[(int)action] = isDown; 
+            input->actionsHit[(int)action] = true; 
         }
     }
 
@@ -297,18 +359,18 @@ static void processKey(SDL_Keycode key, bool isDown, bool isCtrlDown, Input::Sta
     case SDLK_9: {
         input->slotToRestoreOrSave = (key == SDLK_0) ? 0 : (key - SDLK_1 + 1);
         if (isCtrlDown) {
-            input->saveState = isDown;
+            input->saveState = true;
         }
         else {
-            input->restoreState = isDown;
+            input->restoreState = true;
         }
     } break;
     case SDLK_ESCAPE: {
-        input->escapeFullScreen = isDown;
+        input->escapeFullScreen = true;
     } break;
     case SDLK_KP_ENTER:
     case SDLK_RETURN: {
-       input->enterPressed = isDown; 
+       input->enterPressed = true; 
     } break;
     default:
         //do nothing
@@ -738,17 +800,7 @@ static bool handleInputMappingFromConfig(Input *input, Input::Action action,
         ConfigValue *configValue = &configValues[i];
         switch (configValue->type) {
         case ConfigValueType::ControllerMapping: {
-            switch (configValue->controllerMapping.value) {
-            case ControllerMappingValue::LeftTrigger: {
-                code = (int)PlatformControllerTriggerMapping::LeftTrigger;
-            } break;
-            case ControllerMappingValue::RightTrigger: {
-                code = (int)PlatformControllerTriggerMapping::RightTrigger;
-            } break;
-            default:
-                code = controllerMappingToSDLButton[(int)configValue->controllerMapping.value];
-                break;
-            }
+            code = controllerMappingToSDLButton[(int)configValue->controllerMapping.value];
             
             Input::Action boundAction;
             if (retrieveActionForInputCode(code, &boundAction, &input->controllerMap)) {
@@ -833,99 +885,92 @@ static inline UTF8Character utf8CharFromScancode(SDL_Scancode scancode, char def
    return utf8FromUTF32(ret < 0x80 ? toupper(ret) : ret);
 }
 
-//static void showKeyMappingDialog(Input::CodeToActionMap *keyMap,
-//                                 Input::CodeToActionMap *ctrlKeyMap) { 
-//    //TODO
-//    char *keymapDialog = nullptr;
+struct PrintableControl {
+    UTF32Character keyCode;  
+    bool isCtrlDown;
+    bool isControllerControl;
+    char *stringToPrint; 
+    const char *sectionHeader;
+};
+static void concatKeyString(char **targetString, const PrintableControl *mapping) {
+    if (mapping->isCtrlDown) {
+        buf_malloc_strcat(*targetString, CTRL);
+    }
+    if ((mapping->keyCode & SDLK_SCANCODE_MASK) || mapping->keyCode  < ' ') {
+        foriarr (movementKeyMappingToSDLKeyCode) {
+            if (movementKeyMappingToSDLKeyCode[i] == mapping->keyCode) {
+                buf_malloc_strcat(*targetString, movementKeyMappingToString[i]);
+                break;
+            }
+        }
+    }
+    else {
+        buf_malloc_strcat(*targetString, utf8FromUTF32(toupper(mapping->keyCode)).string);
+    }
+    if (!mapping->isCtrlDown) {
+        buf_malloc_strcat(*targetString, " Key");
+    }
+}
+ 
+static void showInputMapDialog(Input::CodeToActionMap *keyMap,
+                                 Input::CodeToActionMap *ctrlKeyMap,
+                                 Input::CodeToActionMap *controllerMap) { 
     
-//    //enforce left to right with LTF character U+2066
-//    buf_gen_memory_strcat(keymapDialog, utf8FromUTF32(0x2066).string);
-//    foribuf (keyMap->mappings) {
-        
-//        Input::Mapping *mapping = &keyMap->mappings[i];
-//        buf_gen_memory_strcat(keymapDialog, actionToString[(int)mapping->action]);
-        
-//        buf_gen_memory_strcat(keymapDialog, " -> ");
-//        if ((mapping->code & SDLK_SCANCODE_MASK) || mapping->code < ' ') {
-//          foriarr (movementKeyMappingToSDLKeyCode) {
-//              if (movementKeyMappingToSDLKeyCode[i] == mapping->code ) {
-//                   buf_gen_memory_strcat(keymapDialog, movementKeyMappingToString[i]);
-//              }
-//          }
-//        }
-//        else {
-//            buf_gen_memory_strcat(keymapDialog, utf8FromUTF32(toupper(mapping->code)).string);
-//        }
-//        buf_gen_memory_strcat(keymapDialog, "  Key");
-        
-//        buf_gen_memory_strcat(keymapDialog, ENDL);
-//        buf_gen_memory_strcat(keymapDialog, "---------------------------------------" ENDL);
-//    }
+    PrintableControl *mappingsToPrint = nullptr;
+    PrintableControl *showDialogMapping = nullptr;
     
-//    foribuf (ctrlKeyMap->mappings) {
-        
-//        Input::Mapping *mapping = &ctrlKeyMap->mappings[i];
-//        buf_gen_memory_strcat(keymapDialog, actionToString[(int)mapping->action]);
-        
-//        buf_gen_memory_strcat(keymapDialog, " -> " CTRL);
-//        if ((mapping->code & SDLK_SCANCODE_MASK) || mapping->code < ' ') {
-//          foriarr (movementKeyMappingToSDLKeyCode) {
-//              if (movementKeyMappingToSDLKeyCode[i] == mapping->code ) {
-//                   buf_gen_memory_strcat(keymapDialog, movementKeyMappingToString[i]);
-//              }
-//          }
-//        }
-//        else {
-//            buf_gen_memory_strcat(keymapDialog, utf8FromUTF32(toupper(mapping->code)).string);
-//        }
-//        buf_gen_memory_strcat(keymapDialog, "  Key");
-        
-//        buf_gen_memory_strcat(keymapDialog, ENDL);
-//        buf_gen_memory_strcat(keymapDialog, "---------------------------------------" ENDL);
-//    }
-    
-//    if (!keymapDialog) {
-//        return;
-//    }
-    
-//    ALERT("%s", keymapDialog);
-//    buf_gen_memory_free(keymapDialog);
-//}
-
-static void showKeyMappingDialog(Input::CodeToActionMap *keyMap,
-                                 Input::CodeToActionMap *ctrlKeyMap) { 
-    
-    //TODO: use bump allocator instead of malloc
-    struct PrintableMapping {
-      UTF32Character keyCode;  
-      bool isCtrlDown;
-      char *stringToPrint; 
-      bool shouldJustPrintNL;
-    };
-    PrintableMapping *mappingsToPrint = nullptr;
-    
-    foribuf (keyMap->mappings) {
-        Input::Mapping *mapping = &keyMap->mappings[i];
-        PrintableMapping pm;
-        pm.isCtrlDown = false;
-        pm.keyCode = mapping->code;
-        pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
-        pm.shouldJustPrintNL = false;
+    {
+        PrintableControl pm;
+        pm.sectionHeader = ENDL "[[Keyboard]]" ENDL;
+        pm.stringToPrint = nullptr;
         buf_malloc_push(mappingsToPrint, pm);
     }
+    foribuf (keyMap->mappings) {
+        Input::Mapping *mapping = &keyMap->mappings[i];
+        PrintableControl pm;
+        pm.isCtrlDown = false;
+        pm.keyCode = mapping->code;
+        pm.isControllerControl = false;
+        pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
+        pm.sectionHeader = nullptr;
+        buf_malloc_push(mappingsToPrint, pm);
+        if (mapping->action == Input::Action::ShowInputMap) {
+            showDialogMapping = buf_end(mappingsToPrint) - 1;
+        }
+    }
     {
-        PrintableMapping pm;
-        pm.shouldJustPrintNL = true;
+        PrintableControl pm;
         pm.stringToPrint = nullptr;
+        pm.sectionHeader = ENDL;
         buf_malloc_push(mappingsToPrint, pm);
     }
     foribuf (ctrlKeyMap->mappings) {
         Input::Mapping *mapping = &ctrlKeyMap->mappings[i];
-        PrintableMapping pm;
+        PrintableControl pm;
         pm.isCtrlDown = true;
         pm.keyCode = mapping->code;
+        pm.isControllerControl = false;
         pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
-        pm.shouldJustPrintNL = false;
+        pm.sectionHeader = nullptr;
+        buf_malloc_push(mappingsToPrint, pm);
+        if (mapping->action == Input::Action::ShowInputMap) {
+            showDialogMapping = buf_end(mappingsToPrint) - 1;
+        }
+    }
+    {
+        PrintableControl pm;
+        pm.sectionHeader = ENDL "[[Controller]]" ENDL;
+        pm.stringToPrint = nullptr;
+        buf_malloc_push(mappingsToPrint, pm);
+    }
+    foribuf (controllerMap->mappings) {
+        Input::Mapping *mapping = &controllerMap->mappings[i];
+        PrintableControl pm;
+        pm.isCtrlDown = false;
+        pm.keyCode = mapping->code;
+        pm.isControllerControl = true;
+        pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
+        pm.sectionHeader = nullptr;
         buf_malloc_push(mappingsToPrint, pm);
     }
     usize longestStringSize = 0;
@@ -934,10 +979,16 @@ static void showKeyMappingDialog(Input::CodeToActionMap *keyMap,
            longestStringSize = buf_len(mappingsToPrint[i].stringToPrint);
        }
     }
-    char *keymapDialog = nullptr;
+    char *keymapDialog = buf_malloc_string("Below are the keyboard and controller controls for GBEmu." ENDL
+                                           );
+    if (showDialogMapping) {
+        buf_malloc_strcat(keymapDialog, "You can pull this message up at any time with "); 
+        concatKeyString(&keymapDialog, showDialogMapping);
+        buf_malloc_strcat(keymapDialog, "." ENDL); 
+    }
     foribuf (mappingsToPrint) {
-        if (mappingsToPrint[i].shouldJustPrintNL) {
-            buf_malloc_strcat(keymapDialog, ENDL);
+        if (mappingsToPrint[i].sectionHeader) {
+            buf_malloc_strcat(keymapDialog, mappingsToPrint[i].sectionHeader);
             continue;
         }
         buf_malloc_strcat(keymapDialog, mappingsToPrint[i].stringToPrint);
@@ -952,31 +1003,22 @@ static void showKeyMappingDialog(Input::CodeToActionMap *keyMap,
         }
         
         buf_malloc_strcat(keymapDialog, " ->  ");
-        if (mappingsToPrint[i].isCtrlDown) {
-            buf_malloc_strcat(keymapDialog, CTRL);
-        }
-        if ((mappingsToPrint[i].keyCode & SDLK_SCANCODE_MASK) || mappingsToPrint[i].keyCode  < ' ') {
-          forjarr (movementKeyMappingToSDLKeyCode) {
-              if (movementKeyMappingToSDLKeyCode[j] == mappingsToPrint[i].keyCode) {
-                   buf_malloc_strcat(keymapDialog, movementKeyMappingToString[j]);
-              }
-          }
+        if (mappingsToPrint[i].isControllerControl) {
+            forjarr (controllerMappingToSDLButton) {
+                if (controllerMappingToSDLButton[j] == mappingsToPrint[i].keyCode) {
+                    buf_malloc_strcat(keymapDialog,controllerMappingToString[j]);
+                    break;
+                }
+            }
         }
         else {
-            buf_malloc_strcat(keymapDialog, utf8FromUTF32(toupper( mappingsToPrint[i].keyCode)).string);
-        }
-        if (!mappingsToPrint[i].isCtrlDown) {
-            buf_malloc_strcat(keymapDialog, "  Key");
+            concatKeyString(&keymapDialog, &mappingsToPrint[i]);
         }
         
         buf_malloc_strcat(keymapDialog, ENDL);
     }
-    
-    if (!keymapDialog) {
-        return;
-    }
-    
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "GBEmu Keyboard Mappings",
+
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "GBEmu Controls",
                              keymapDialog, nullptr);
     foribuf (mappingsToPrint) {
          buf_malloc_free(mappingsToPrint[i].stringToPrint);
@@ -987,6 +1029,7 @@ static void showKeyMappingDialog(Input::CodeToActionMap *keyMap,
 static bool doConfigFileParsing(const char *configFilePath, ProgramState *programState) {
 
     auto result = parseConfigFile(configFilePath); 
+    bool isNewConfig = false;
     switch (result.fsResultCode) {
     case FileSystemResultCode::OK:  {
         //do nothing and continue 
@@ -995,36 +1038,7 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
         freeParserResult(&result);
         
         profileStart("Save new file", profileState);
-//        const char *defaultConfigFileContents = 
-//                "//See README.md for more about config.txt"
-//                ENDL
-//                "//Control Mappings" ENDL 
-//                ENDL
-//                "Up = Key W, Controller Up" ENDL 
-//                "Down = Key S,  Controller Down" ENDL
-//                "Left = Key A, Controller Left" ENDL
-//                "Right = Key D, Controller Right" ENDL
-//                ENDL 
-//                "Start = Key Enter, Controller Start" ENDL 
-//                "Select = Key \\, Controller Back" ENDL
-//                ENDL 
-//                "A = Key /, Controller A" ENDL 
-//                "B = Key ., Controller B" ENDL
-//                ENDL
-//                "Rewind = Key Left, Controller LeftBumper" ENDL
-//                "Step = Key N" ENDL
-//                "Continue = Key C" ENDL
-//                ENDL
-//                "Mute = Key " CTRL "M" ENDL
-//                "Pause = Key " CTRL "P" ENDL
-//                "Reset = Key " CTRL "R" ENDL
-//                "ShowDebugger = Key " CTRL "B" ENDL
-//                "ShowHomePath = Key " CTRL "H" ENDL
-//                "FullScreen = Key " CTRL "F" ENDL
-//                ENDL
-//                "//Misc" ENDL
-//                "ScreenScale = 4";
-        const char *defaultConfigFileContents = 
+        const char defaultConfigFileContents[] = 
             "//See README.md for more about config.txt"
             ENDL
             "//Control Mappings" ENDL 
@@ -1049,8 +1063,8 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
             "Reset = Key " CTRL "%s" ENDL
             "ShowDebugger = Key " CTRL "%s" ENDL
             "FullScreen = Key " CTRL "%s" ENDL
-                
             "ShowHomePath = Key %s" ENDL
+            "ShowInputMap = Key " CTRL "%s" ENDL
             ENDL
             "//Misc" ENDL
             "ScreenScale = 4";
@@ -1065,12 +1079,13 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
                               utf8CharFromScancode(SDL_SCANCODE_PERIOD, '.').string,
                               utf8CharFromScancode(SDL_SCANCODE_N, 'N').string,
                               utf8CharFromScancode(SDL_SCANCODE_C, 'C').string,
-                              utf8CharFromScancode(SDL_SCANCODE_M, 'M').string,
+                              utf8CharFromScancode(SDL_SCANCODE_U, 'U').string,
                               utf8CharFromScancode(SDL_SCANCODE_P, 'P').string,
                               utf8CharFromScancode(SDL_SCANCODE_R, 'R').string,
                               utf8CharFromScancode(SDL_SCANCODE_B, 'B').string,
                               utf8CharFromScancode(SDL_SCANCODE_F, 'F').string,
-                              utf8CharFromScancode(SDL_SCANCODE_H, 'H').string);
+                              utf8CharFromScancode(SDL_SCANCODE_H, 'H').string,
+                              utf8CharFromScancode(SDL_SCANCODE_N, 'N').string);
                                                      
         auto writeResult = writeDataToFile(fileContents, (isize)strlen(fileContents), configFilePath);
         switch (writeResult) {
@@ -1100,6 +1115,7 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
         }
 
         profileEnd(profileState);
+        isNewConfig = true;
 
     } break;
     default: {
@@ -1118,8 +1134,8 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
         //do nothing and continue 
     } break;
     CASE_ERROR(BadTokenStartOfLine, "Invalid config option");
-    CASE_ERROR(BadRHSToken, "Invalid config value");
-    CASE_ERROR(UnknownLHSConfig, "Unrecognized config option");
+    CASE_ERROR(UnknownConfigValue, "Invalid config value");
+    CASE_ERROR(UnknownConfigKey, "Unrecognized config option");
     CASE_ERROR(UnrecognizedKeyMapping, "Unrecognized key to map to");
     CASE_ERROR(NumberKeyMappingNotAllowed, "Mapping to a number key is not supported");
     CASE_ERROR(UnrecognizedControllerMapping, "Unrecognized controller button to map to");
@@ -1165,6 +1181,7 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
         CASE_MAPPING(Continue);
         CASE_MAPPING(Reset);
         CASE_MAPPING(FullScreen);
+        CASE_MAPPING(ShowInputMap);
         case ConfigKeyType::ScreenScale: {
            if (cp->numValues != 1) {
                ALERT_EXIT("ScreenScale config option must only take one value.");
@@ -1207,8 +1224,9 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     
     freeParserResult(&result);
     
-    //TODO: remove
-    showKeyMappingDialog(&input->keysMap, &input->ctrlKeysMap);
+    if (isNewConfig) {
+        showInputMapDialog(&input->keysMap, &input->ctrlKeysMap, &input->controllerMap);
+    }
     return true;
 }
 
@@ -1654,14 +1672,12 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                     return;
 
                 case SDL_KEYDOWN: {
-                    processKey(e.key.keysym.sym, true, (keyMod & CTRL_KEY) != 0, &input->newState, 
+                    processKeyDown(e.key.keysym.sym, (keyMod & CTRL_KEY) != 0, &input->newState, 
                                &input->keysMap, &input->ctrlKeysMap);
-                    
                 } break;
 
                 case SDL_KEYUP: {
-                    processKey(e.key.keysym.sym, false, (keyMod & CTRL_KEY) != 0, &input->newState, 
-                               &input->keysMap, &input->ctrlKeysMap);
+                    processKeyUp(e.key.keysym.sym, &input->newState, &input->keysMap, &input->ctrlKeysMap);
                 } break;
 
                 case SDL_CONTROLLERBUTTONUP:  
@@ -1711,18 +1727,18 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                         } break;
                         case SDL_CONTROLLER_AXIS_TRIGGERLEFT: {
                             if (e.caxis.value > ANALOG_STICK_DEADZONE) {
-                                processButton((int)PlatformControllerTriggerMapping::LeftTrigger, true, &input->newState, &input->controllerMap);
+                                processButton(controllerMappingToSDLButton[(int)ControllerMappingValue::LeftTrigger], true, &input->newState, &input->controllerMap);
                             }
                             else if (e.caxis.value <= ANALOG_STICK_DEADZONE) {
-                                processButton((int)PlatformControllerTriggerMapping::LeftTrigger, false, &input->newState, &input->controllerMap);
+                                processButton(controllerMappingToSDLButton[(int)ControllerMappingValue::LeftTrigger], false, &input->newState, &input->controllerMap);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: {
                             if (e.caxis.value > ANALOG_STICK_DEADZONE) {
-                                processButton((int)PlatformControllerTriggerMapping::RightTrigger, true, &input->newState, &input->controllerMap);
+                                processButton(controllerMappingToSDLButton[(int)ControllerMappingValue::RightTrigger], true, &input->newState, &input->controllerMap);
                             }
                             else if (e.caxis.value <= ANALOG_STICK_DEADZONE) {
-                                processButton((int)PlatformControllerTriggerMapping::RightTrigger, false, &input->newState, &input->controllerMap);
+                                processButton(controllerMappingToSDLButton[(int)ControllerMappingValue::RightTrigger], false, &input->newState, &input->controllerMap);
                             }
                         } break;
                         }
@@ -1812,6 +1828,9 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                 if (initDebugger(debuggerContext, gbDebug, programState, windowX, windowY)) {
                     gbDebug->isEnabled = true;
                 }
+            }
+            if (isActionPressed(Input::Action::ShowInputMap, input)) {
+                showInputMapDialog(&input->keysMap, &input->ctrlKeysMap, &input->controllerMap);
             }
             if (isActionPressed(Input::Action::FullScreen, input)) {
                 if (programState->isFullScreen) {
@@ -1978,7 +1997,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
             }
             profileEnd(profileState);
         }
-        
+ 
         input->oldState = input->newState;
     }
 }

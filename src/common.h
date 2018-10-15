@@ -1402,14 +1402,15 @@ ReadFileResult readEntireFile(const char *fileName, MemoryStack *fileMemory) {
             default:
                 ret.resultCode = FileSystemResultCode::Unknown;
             }
+            goto error;
         }
         else if (size == 0) {
             ret.resultCode = FileSystemResultCode::OK;
         }
         else {
             ret.resultCode = FileSystemResultCode::Unknown;
+            goto error;
         }
-        goto error;
     }
 
     ret.data = data;

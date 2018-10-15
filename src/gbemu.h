@@ -492,7 +492,7 @@ struct Input {
 
         Rewind, Continue, Step, Mute,
         Pause, Reset, ShowDebugger, ShowHomePath,
-        FullScreen,
+        FullScreen, ShowInputMap,
 
         NumActions
     };

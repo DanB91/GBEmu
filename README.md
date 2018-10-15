@@ -10,12 +10,14 @@ GBEmu can be run from a standard GUI file manager (e.g. Finder, Windows Explorer
 	* `-d` -- Start with the debugger screen up and emulator paused.
 
 ### Controls
-GBEmu supports both keyboard and controller input.  Any controller supported by SDL2 should be supported. Xbox One/360, PS4, PS3, controllers are included. A list can be found [here](https://github.com/gabomdq/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt).  Right, now mappings are fixed, but customization will be coming in the future.  
+GBEmu supports both keyboard and controller input.  Any controller supported by SDL2 should be supported. Xbox One/360, PS4, PS3, controllers are included. A list can be found [here](https://github.com/gabomdq/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt).  
 
-There is a bunch of functionality available on the keyboard that is not currently mapped to the controller (e.g. pausing emulation).  More thought needs to be put into how it should map to the controller.
+Default emulator controls for US keyboards are in the *Keyboard* section below.  If you do not use a US keyboard, the keyboard controls are automatically determined by "translating" US keyboard mappings into your keyboard language. For example, the Game Boy A button on a standard French keyboard would be `=` instead of `/`. Both keyboard and controller controls can be changed in **config.txt**.
+
+By default there is a bunch of functionality available on the keyboard that is not currently mapped to the controller (e.g. pausing emulation). However, any emulator action can be mapped to the controller in **config.txt**.
 
 #### Keyboard
-The following mappings are the default keyboard mappings (they have changed since version 0.0.1).  They can be changed in **config.txt**:
+The following mappings are the default keyboard mappings for a US keyboard (they have changed since version 0.0.1):
 
 - `W S A D` -- Up, Down, Left, and Right, respectively
 - `/ .` -- A and B, respectively
@@ -23,12 +25,13 @@ The following mappings are the default keyboard mappings (they have changed sinc
 - `Left Arrow` -- Rewind
 - `N` -- Next instruction when emulator is paused, including when a breakpoint is hit.
 - `C` -- Continue from breakpoint.
+- `H` -- Briefly display **Home Directory** in the title bar
 - `Ctrl (Command on Mac) - P` -- Pause and unpause emulation
 - `Ctrl (Command on Mac) - R` -- Reset emulation
 - `Ctrl (Command on Mac) - F` -- Toggle fullscreen
-- `Ctrl (Command on Mac) - M` -- Mute sound
-- `Ctrl (Command on Mac) - H` -- Briefly display **Home Directory** in the title bar
+- `Ctrl (Command on Mac) - U` -- Mute sound
 - `Ctrl (Command on Mac) - B` -- Launch debugger screen
+- `Ctrl (Command on Mac) - N` -- Show emulator controls
 - `0 to 9` -- Load saved state from slots 0 to 9
 - `Ctrl (Command on Mac) - 0 to 9` -- Save current states 0 to 9
 
@@ -38,6 +41,8 @@ The following mappings are the default keyboard mappings (they have changed sinc
 - `Start Back (Options Touchpad Button for PS4)` -- Start, Select respectively
 - `Left Bumper (L1 for PS4)` -- Rewind
 
+### Config.txt
+--TODO
 ### Full Screen
 GBEmu supports full screen mode.  It can be toggled using `Ctrl (Command on Mac) - F`.  It should be noted that notifications currently don't show in full screen mode.  So, for example, you won't get any message for saving a save state like you do in windowed mode.
 

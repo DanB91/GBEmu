@@ -4,9 +4,9 @@
 #include "common.h"
 enum class ParserStatus {
     OK = 0,
-    BadRHSToken,
+    UnknownConfigValue,
     BadTokenStartOfLine,
-    UnknownLHSConfig,
+    UnknownConfigKey,
     NumberKeyMappingNotAllowed,
     MissingEquals,
     ExtraneousToken,
@@ -21,7 +21,7 @@ enum class ConfigKeyType{
     A, B, Start, Select, Rewind,
     Step, Continue, Mute,
     ScreenScale, Pause, ShowDebugger,
-    Reset, ShowHomePath, FullScreen,
+    Reset, ShowHomePath, FullScreen, ShowInputMap,
 };
 
 struct NonNullTerminatedString {

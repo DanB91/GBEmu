@@ -397,7 +397,7 @@ static ParserStatus configValue(ConfigValue *outConfigValue) {
         outConfigValue->textFromFile = currentToken.stringValue;
     }
     else {
-        return ParserStatus::BadRHSToken;
+        return ParserStatus::UnknownConfigValue;
     }
     
     nextToken();
@@ -462,8 +462,11 @@ static ParserStatus configKey(ConfigKey *outConfigKey) {
         else if (CMP_STR("fullscreen")) {
             outConfigKey->type = ConfigKeyType::FullScreen;
         }
+        else if (CMP_STR("showinputmap")) {
+            outConfigKey->type = ConfigKeyType::ShowInputMap;
+        }
         else {
-            return ParserStatus::UnknownLHSConfig;
+            return ParserStatus::UnknownConfigKey;
         }
         
         outConfigKey->textFromFile = currentToken.stringValue;
@@ -529,6 +532,7 @@ ParserResult parseConfigFile(const char *fileName) {
     
     currentToken.type = ConfigTokenType::Begin;
     stream = currentLine = (char*)fileResult.data;
+    
     RESIZEM(stream, fileResult.size + 1, char);
     stream[fileResult.size] = '\0';
     nextToken();
