@@ -31,7 +31,7 @@ int main() {
     TEST_ASSERT_EQ(utf32FromUTF8({0xAE8E9FF0}),  L'🎮', "Bad translation from utf32 to utf8");
 
     //config tests
-    auto res = parseConfigFile("src/tests/test.txt");
+    auto res = parseConfigFile("../src/tests/test.txt");
     TEST_ASSERT_EQ(res.fsResultCode, FileSystemResultCode::OK, "File should exist");
     TEST_ASSERT_EQ(res.status, ParserStatus::OK, "Parse should have succeded");
     TEST_ASSERT_EQ(res.numConfigPairs, 5, "Incorrect number of configs");

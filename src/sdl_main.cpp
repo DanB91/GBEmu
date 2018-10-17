@@ -912,7 +912,8 @@ static void concatKeyString(char **targetString, const PrintableControl *mapping
     }
 }
  
-static void showInputMapDialog(Input::CodeToActionMap *keyMap,
+static void showInputMapDialog(SDL_Window *mainWindow,
+                                Input::CodeToActionMap *keyMap,
                                  Input::CodeToActionMap *ctrlKeyMap,
                                  Input::CodeToActionMap *controllerMap) { 
     
@@ -1019,7 +1020,7 @@ static void showInputMapDialog(Input::CodeToActionMap *keyMap,
     }
 
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "GBEmu Controls",
-                             keymapDialog, nullptr);
+                             keymapDialog, mainWindow);
     foribuf (mappingsToPrint) {
          buf_malloc_free(mappingsToPrint[i].stringToPrint);
     }
@@ -1225,7 +1226,7 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     freeParserResult(&result);
     
     if (isNewConfig) {
-        showInputMapDialog(&input->keysMap, &input->ctrlKeysMap, &input->controllerMap);
+        showInputMapDialog(nullptr, &input->keysMap, &input->ctrlKeysMap, &input->controllerMap);
     }
     return true;
 }
@@ -1830,7 +1831,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                 }
             }
             if (isActionPressed(Input::Action::ShowInputMap, input)) {
-                showInputMapDialog(&input->keysMap, &input->ctrlKeysMap, &input->controllerMap);
+                showInputMapDialog(window, &input->keysMap, &input->ctrlKeysMap, &input->controllerMap);
             }
             if (isActionPressed(Input::Action::FullScreen, input)) {
                 if (programState->isFullScreen) {
@@ -2008,7 +2009,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && argc <= 4) {
         forirange (1, argc) {
             if (argv[i][0] == '-') {
-                if (strcmp("-d", argv[i]) == 0) {
+                if (strcmp(DEBUG_ON_BOOT_FLAG, argv[i]) == 0) {
                     shouldEnableDebugMode = true;
                 }
                 else {
@@ -2022,7 +2023,7 @@ int main(int argc, char **argv) {
     }
     else if (argc != 1) {
        PRINT("GBEmu -- Version %s", GBEMU_VERSION);
-       PRINT("Usage :gbemu [-d] path_to_ROM");
+       PRINT("Usage :gbemu " DEBUG_ON_BOOT_FLAG " path_to_ROM");
        PRINT("\t" DEBUG_ON_BOOT_FLAG " -- Start with the debugger screen up and emulator paused");
        return 1; 
     }

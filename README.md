@@ -99,6 +99,7 @@ GBEmu has a second screen where you can access certain settings and a simple ROM
 
 ## Compile
 I have tested compilation on clang and gcc.  As of now it, doesn't work on MSVC because I use case ranges (sorry!).  The goal is to eventually have it compile on more than clang and gcc but that is not a priority right now.  There are warnings pertaining to integer conversion.  I will get rid of them in the future.
+A copy of SDL2 is included for all supported platforms, so no need to manually install it.
 
 ### Mac
 1. Requirements:
@@ -115,11 +116,11 @@ I have tested compilation on clang and gcc.  As of now it, doesn't work on MSVC 
 	* clang  -- Tested on clang 9.
 	* gcc -- Tested on GCC 5.4 (which is what comes with Ubuntu 16.04).
 	* GTK3
-	* Install SDL2 library on your favorite distro.
+	* Install the sndio library on your favorite distro.
 	* Tested on Arch Linux and Ubuntu 16.04 LTS.
 - To compile:
- 1. Install SDL2 and GTK3 libs
-	- For example, on Ubuntu: `sudo apt install libsdl2-dev libgtk-3-dev`
+ 1. Install sndio and GTK3 libs
+	- For example, on Ubuntu: `sudo apt install libsndio-dev libgtk-3-dev`
  2. Go to the source directory in the Terminal.
  3. `make release`
  4. The executable is located in the build directory
@@ -127,7 +128,6 @@ I have tested compilation on clang and gcc.  As of now it, doesn't work on MSVC 
 ### Windows
 - Requirements:
 	* clang -- Clang is required for Windows.  It does not yet support MSVC.
-	* SDL2 is included in the source tree.
 	* Tested on Windows 10.
 - To compile:
 	1. Go to the source directory in the CMD.
