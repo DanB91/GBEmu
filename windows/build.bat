@@ -1,14 +1,25 @@
 @echo off
-echo %CD%
+:printUsage
+	echo "Builds GBEmu for Windows. When no arguments are specified, then a release build is built."
+	echo "Usage $0 [help | profile | clean]"
+	echo "	help -- Prints this help message."
+	echo "	profile -- Builds GBEmu where the profiler enabled and is accessible in the GBEmu debugger."
+    echo "	clean -- Cleans the build directory."
+goto :eof
+
+set build=build
+set CPPFLAGS=-D_CRT_SECURE_NO_WARNINGS -Zi -I include  -Wno-pragma-pack -Wno-int-to-void-pointer-cast -Wno-unknown-warning-option -I..\src\3rdparty
+
+if "%1" == "help" (call :printUsage; exit)
+if "%1" == "profile" (set CPPFLAGS=%CPPFLAGS% -DCO_PROFILE)
+if "%1" == "clean" (del %build%\*; echo "Removed %build%"; exit)
+
 .\ctime_windows.exe -begin buildtime.ctf
 set CC="C:\Program Files\LLVM\bin\clang-cl"
-set build=build
 set resources=resources
 set /p version=< ..\version.txt
-set CPPFLAGS=-D_CRT_SECURE_NO_WARNINGS -Zi -I include  -Wno-pragma-pack -Wno-int-to-void-pointer-cast -Wno-unknown-warning-option -I..\src\3rdparty
 @echo constexpr char GBEMU_VERSION[] = "%version%"; > ..\src\version.h 
 
-if "%1" == "profile" (set CPPFLAGS=%CPPFLAGS% -DCO_PROFILE)
 if not exist %build% mkdir %build%
 if not exist %build%\imgui.obj %CC% %CPPFLAGS% -c ..\src\3rdparty\imgui.cpp -o %build%\imgui.obj
 if not exist %build%\SDL2.dll copy lib\SDL2.dll %build%

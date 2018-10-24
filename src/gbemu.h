@@ -490,9 +490,9 @@ struct Input {
         Left = 0, Right, Up, Down,
         A, B, Start, Select,
 
-        Rewind, Continue, Step, Mute,
+        Rewind, DebuggerContinue, DebuggerStep, Mute,
         Pause, Reset, ShowDebugger, ShowHomePath,
-        FullScreen, ShowInputMap,
+        FullScreen, ShowControls,
 
         NumActions
     };
@@ -531,7 +531,7 @@ struct Input {
     
     CodeToActionMap keysMap;
     CodeToActionMap ctrlKeysMap;
-    CodeToActionMap controllerMap;
+    CodeToActionMap gamepadMap;
 
     //debug controls
 };
@@ -539,7 +539,7 @@ static const char *inputActionToStr[] = {
     "Left", "Right", "Up", "Down",
     "A", "B", "Start", "Select",
 
-    "Rewind", "Continue", "Step", "Mute",
+    "Rewind", "DebuggerContinue", "DebuggerStep", "Mute",
     "Pause", "Reset", "ShowDebugger", "ShowHomePath",
     "FullScreen",
 

@@ -51,8 +51,8 @@ int main() {
     
     TEST_ASSERT_EQ(res.configPairs[2].key.type, ConfigKeyType::Start, "Wrong LHS value");
     TEST_ASSERT_EQ(res.configPairs[2].numValues, 3, "Wrong number of RHS values");
-    TEST_ASSERT_EQ(res.configPairs[2].values[0].type, ConfigValueType::ControllerMapping, "Wrong type of mapping");
-    TEST_ASSERT_EQ(res.configPairs[2].values[0].controllerMapping.value, ControllerMappingValue::Start, "Wrong mapping");
+    TEST_ASSERT_EQ(res.configPairs[2].values[0].type, ConfigValueType::GamepadMapping, "Wrong type of mapping");
+    TEST_ASSERT_EQ(res.configPairs[2].values[0].gamepadMapping.value, GamepadMappingValue::Start, "Wrong mapping");
     TEST_ASSERT_EQ(res.configPairs[2].values[1].type, ConfigValueType::KeyMapping, "Should be key mapping");
     TEST_ASSERT_EQ(res.configPairs[2].values[1].keyMapping.characterValue.data, '#', "Wrong key mapped");
     TEST_ASSERT_EQ(res.configPairs[2].values[1].keyMapping.isCtrlHeld, false, "Ctrl not held");

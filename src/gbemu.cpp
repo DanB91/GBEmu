@@ -3291,7 +3291,7 @@ void runFrame(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programSt
 #define WAS_PRESSED(button) (input->newState.button == true && input->oldState.button == false)
 #define IS_DOWN(button) (input->newState.button)
         if (cpu->isPaused) {
-            if (isActionPressed(Input::Action::Step, input)) {
+            if (isActionPressed(Input::Action::DebuggerStep, input)) {
                 step(cpu, mmu, gbDebug, programState->soundState.volume);
             }
         }
@@ -3312,7 +3312,7 @@ void runFrame(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programSt
                 syncRTCTime(&mmu->rtc, mmu->cartRAMPlatformState.rtcFileMap);
             }
         }
-        if (isActionPressed(Input::Action::Continue, input)) {
+        if (isActionPressed(Input::Action::DebuggerContinue, input)) {
             continueFromBreakPoint(gbDebug, mmu, cpu, programState); 
         }
         if (isActionPressed(Input::Action::Rewind, input)) {

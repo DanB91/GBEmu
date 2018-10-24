@@ -61,6 +61,7 @@
 
     
 #define ANALOG_STICK_DEADZONE 8000
+#define ANALOG_TRIGGER_DEADZONE 8000
     
 #ifdef MAC 
 #   define CTRL "Command-"
@@ -101,50 +102,50 @@ static const SDL_Keycode movementKeyMappingToSDLKeyCode[] = {
   [(int)MovementKeyMappingValue::Tab] = SDLK_TAB, 
 };
 
-static const int controllerMappingToSDLButton[] = {
-  [(int)ControllerMappingValue::A] = SDL_CONTROLLER_BUTTON_A,  
-  [(int)ControllerMappingValue::B] = SDL_CONTROLLER_BUTTON_B,  
-  [(int)ControllerMappingValue::X] = SDL_CONTROLLER_BUTTON_X,  
-  [(int)ControllerMappingValue::Y] = SDL_CONTROLLER_BUTTON_Y,  
+static const int gamepadMappingToSDLButton[] = {
+  [(int)GamepadMappingValue::A] = SDL_CONTROLLER_BUTTON_A,  
+  [(int)GamepadMappingValue::B] = SDL_CONTROLLER_BUTTON_B,  
+  [(int)GamepadMappingValue::X] = SDL_CONTROLLER_BUTTON_X,  
+  [(int)GamepadMappingValue::Y] = SDL_CONTROLLER_BUTTON_Y,  
     
-  [(int)ControllerMappingValue::Up] = SDL_CONTROLLER_BUTTON_DPAD_UP,  
-  [(int)ControllerMappingValue::Down] = SDL_CONTROLLER_BUTTON_DPAD_DOWN,  
-  [(int)ControllerMappingValue::Left] = SDL_CONTROLLER_BUTTON_DPAD_LEFT,  
-  [(int)ControllerMappingValue::Right] = SDL_CONTROLLER_BUTTON_DPAD_RIGHT,  
+  [(int)GamepadMappingValue::Up] = SDL_CONTROLLER_BUTTON_DPAD_UP,  
+  [(int)GamepadMappingValue::Down] = SDL_CONTROLLER_BUTTON_DPAD_DOWN,  
+  [(int)GamepadMappingValue::Left] = SDL_CONTROLLER_BUTTON_DPAD_LEFT,  
+  [(int)GamepadMappingValue::Right] = SDL_CONTROLLER_BUTTON_DPAD_RIGHT,  
   
-  [(int)ControllerMappingValue::LeftBumper] = SDL_CONTROLLER_BUTTON_LEFTSHOULDER,  
-  [(int)ControllerMappingValue::RightBumper] = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,  
+  [(int)GamepadMappingValue::LeftBumper] = SDL_CONTROLLER_BUTTON_LEFTSHOULDER,  
+  [(int)GamepadMappingValue::RightBumper] = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,  
     
-  [(int)ControllerMappingValue::Start] = SDL_CONTROLLER_BUTTON_START,  
-  [(int)ControllerMappingValue::Back] = SDL_CONTROLLER_BUTTON_BACK,  
+  [(int)GamepadMappingValue::Start] = SDL_CONTROLLER_BUTTON_START,  
+  [(int)GamepadMappingValue::Back] = SDL_CONTROLLER_BUTTON_BACK,  
     
-  [(int)ControllerMappingValue::Home] = SDL_CONTROLLER_BUTTON_GUIDE,  
+  [(int)GamepadMappingValue::Guide] = SDL_CONTROLLER_BUTTON_GUIDE,  
     
 //using negative numbers as to not conflict with SDL codes
-  [(int)ControllerMappingValue::LeftTrigger] = NO_INPUT_MAPPING - 1,
-  [(int)ControllerMappingValue::RightTrigger] = NO_INPUT_MAPPING - 2,
+  [(int)GamepadMappingValue::LeftTrigger] = NO_INPUT_MAPPING - 1,
+  [(int)GamepadMappingValue::RightTrigger] = NO_INPUT_MAPPING - 2,
 };
-static const char *controllerMappingToString[] = {
-  [(int)ControllerMappingValue::A] = "A Button",  
-  [(int)ControllerMappingValue::B] = "B Button",  
-  [(int)ControllerMappingValue::X] = "X Button",  
-  [(int)ControllerMappingValue::Y] = "Y Button",  
+static const char *gamepadMappingToString[] = {
+  [(int)GamepadMappingValue::A] = "A Button",  
+  [(int)GamepadMappingValue::B] = "B Button",  
+  [(int)GamepadMappingValue::X] = "X Button",  
+  [(int)GamepadMappingValue::Y] = "Y Button",  
     
-  [(int)ControllerMappingValue::Up] = "D-Pad Up",  
-  [(int)ControllerMappingValue::Down] = "D-Pad Down",  
-  [(int)ControllerMappingValue::Left] = "D-Pad Left",  
-  [(int)ControllerMappingValue::Right] = "D-Pad Right",  
+  [(int)GamepadMappingValue::Up] = "D-Pad Up",  
+  [(int)GamepadMappingValue::Down] = "D-Pad Down",  
+  [(int)GamepadMappingValue::Left] = "D-Pad Left",  
+  [(int)GamepadMappingValue::Right] = "D-Pad Right",  
   
-  [(int)ControllerMappingValue::LeftBumper] = "Left Bumper",  
-  [(int)ControllerMappingValue::RightBumper] = "Right Bumper",  
+  [(int)GamepadMappingValue::LeftBumper] = "Left Bumper",  
+  [(int)GamepadMappingValue::RightBumper] = "Right Bumper",  
     
-  [(int)ControllerMappingValue::Start] = "Start Button",  
-  [(int)ControllerMappingValue::Back] = "Back Button",  
+  [(int)GamepadMappingValue::Start] = "Start Button",  
+  [(int)GamepadMappingValue::Back] = "Back Button",  
     
-  [(int)ControllerMappingValue::Home] = "Guide Button",  
+  [(int)GamepadMappingValue::Guide] = "Guide Button",  
     
-  [(int)ControllerMappingValue::LeftTrigger] = "Left Trigger",  
-  [(int)ControllerMappingValue::RightTrigger] = "Right Trigger",  
+  [(int)GamepadMappingValue::LeftTrigger] = "Left Trigger",  
+  [(int)GamepadMappingValue::RightTrigger] = "Right Trigger",  
 };
 
 static const char *actionToString[(int)Input::Action::NumActions] = {
@@ -157,15 +158,15 @@ static const char *actionToString[(int)Input::Action::NumActions] = {
     [(int)Input::Action::Left] = "Game Boy D-Pad Left",  
     [(int)Input::Action::Right] = "Game Boy D-Pad Right",  
     [(int)Input::Action::Rewind] = "Emulator Rewind",  
-    [(int)Input::Action::Continue] = "Debugger Continue",  
-    [(int)Input::Action::Step] = "Debugger Step",  
+    [(int)Input::Action::DebuggerContinue] = "Debugger Continue",  
+    [(int)Input::Action::DebuggerStep] = "Debugger Step",  
     [(int)Input::Action::ShowHomePath] = "Show GBEmu Home Path",  
     [(int)Input::Action::Mute] = "Mute Sound",
     [(int)Input::Action::Pause] = "Pause Emulator",
     [(int)Input::Action::Reset] = "Reset Emulator",  
     [(int)Input::Action::ShowDebugger] = "Show Debugger",  
     [(int)Input::Action::FullScreen] = "Make Full Screen",  
-    [(int)Input::Action::ShowInputMap] = "Show This Message"  
+    [(int)Input::Action::ShowControls] = "Show This Message"  
 };
 
 bool openFileDialogAtPath(const char *path, char *outPath);
@@ -380,9 +381,9 @@ static void processKeyDown(SDL_Keycode key,  bool isCtrlDown, Input::State *inpu
 }
 
 
-static void processButton(int button, bool isDown, Input::State *input, Input::CodeToActionMap *controllerMap) {
+static void processButton(int button, bool isDown, Input::State *input, Input::CodeToActionMap *gamepadMap) {
     Input::Action action;
-    if (retrieveActionForInputCode(button, &action, controllerMap)) {
+    if (retrieveActionForInputCode(button, &action, gamepadMap)) {
         input->actionsHit[(int)action] = isDown; 
     }
 }
@@ -554,6 +555,7 @@ static void renderDebuggerThread(void *arg) {
 
         
         SDL_GL_SwapWindow(platformContext->window);
+        CO_ASSERT(glGetError() == GL_NO_ERROR);
         unlockMutex(gbDebug->debuggerMutex);
         
     }
@@ -566,8 +568,8 @@ initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetSwapInterval(1);
     auto window = SDL_CreateWindow("Debugger", mainScreenX + 20, mainScreenY + 20,
                                    DEBUG_WINDOW_MIN_WIDTH, DEBUG_WINDOW_MIN_HEIGHT, 
@@ -799,11 +801,11 @@ static bool handleInputMappingFromConfig(Input *input, Input::Action action,
     fori (numConfigValues) {
         ConfigValue *configValue = &configValues[i];
         switch (configValue->type) {
-        case ConfigValueType::ControllerMapping: {
-            code = controllerMappingToSDLButton[(int)configValue->controllerMapping.value];
+        case ConfigValueType::GamepadMapping: {
+            code = gamepadMappingToSDLButton[(int)configValue->gamepadMapping.value];
             
             Input::Action boundAction;
-            if (retrieveActionForInputCode(code, &boundAction, &input->controllerMap)) {
+            if (retrieveActionForInputCode(code, &boundAction, &input->gamepadMap)) {
                 char *configValueString = PUSHMCLR(configValue->textFromFile.len + 1, char);
                 AutoMemory am(configValueString);
                 copyMemory(configValue->textFromFile.data, configValueString, configValue->textFromFile.len);
@@ -812,7 +814,7 @@ static bool handleInputMappingFromConfig(Input *input, Input::Action action,
                            inputActionToStr[(int)boundAction], inputActionToStr[(int)action]);
                 return false;
             }
-            registerInputMapping(code, action, &input->controllerMap);
+            registerInputMapping(code, action, &input->gamepadMap);
         } break;
         case ConfigValueType::KeyMapping: {
             switch (configValue->keyMapping.type) {
@@ -842,7 +844,7 @@ static bool handleInputMappingFromConfig(Input *input, Input::Action action,
             char *configKeyString = PUSHMCLR(configKey->textFromFile.len + 1, char);
             AutoMemory am(configKeyString);
             copyMemory(configKey->textFromFile.data, configKeyString, configKey->textFromFile.len);
-            ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a controller or key mapping.",
+            ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a gamepad or key mapping.",
                        configKeyString, configKey->line, configKey->posInLine, GBEMU_CONFIG_FILENAME);
             return false;
         } break;
@@ -882,13 +884,13 @@ static inline UTF8Character utf8CharFromScancode(SDL_Scancode scancode, char def
       return utf8FromUTF32(defaultChar); 
    }
    
-   return utf8FromUTF32(ret < 0x80 ? toupper(ret) : ret);
+   return utf8FromUTF32(ret < 0x80 ? tolower(ret) : ret);
 }
 
 struct PrintableControl {
     UTF32Character keyCode;  
     bool isCtrlDown;
-    bool isControllerControl;
+    bool isGamepadControl;
     char *stringToPrint; 
     const char *sectionHeader;
 };
@@ -896,7 +898,7 @@ static void concatKeyString(char **targetString, const PrintableControl *mapping
     if (mapping->isCtrlDown) {
         buf_malloc_strcat(*targetString, CTRL);
     }
-    if ((mapping->keyCode & SDLK_SCANCODE_MASK) || mapping->keyCode  < ' ') {
+    if ((mapping->keyCode & SDLK_SCANCODE_MASK) || iscntrl(mapping->keyCode)) {
         foriarr (movementKeyMappingToSDLKeyCode) {
             if (movementKeyMappingToSDLKeyCode[i] == mapping->keyCode) {
                 buf_malloc_strcat(*targetString, movementKeyMappingToString[i]);
@@ -905,7 +907,7 @@ static void concatKeyString(char **targetString, const PrintableControl *mapping
         }
     }
     else {
-        buf_malloc_strcat(*targetString, utf8FromUTF32(toupper(mapping->keyCode)).string);
+        buf_malloc_strcat(*targetString, utf8FromUTF32(tolower(mapping->keyCode)).string);
     }
     if (!mapping->isCtrlDown) {
         buf_malloc_strcat(*targetString, " Key");
@@ -915,7 +917,7 @@ static void concatKeyString(char **targetString, const PrintableControl *mapping
 static void showInputMapDialog(SDL_Window *mainWindow,
                                 Input::CodeToActionMap *keyMap,
                                  Input::CodeToActionMap *ctrlKeyMap,
-                                 Input::CodeToActionMap *controllerMap) { 
+                                 Input::CodeToActionMap *gamepadMap) { 
     
     PrintableControl *mappingsToPrint = nullptr;
     PrintableControl *showDialogMapping = nullptr;
@@ -931,11 +933,11 @@ static void showInputMapDialog(SDL_Window *mainWindow,
         PrintableControl pm;
         pm.isCtrlDown = false;
         pm.keyCode = mapping->code;
-        pm.isControllerControl = false;
+        pm.isGamepadControl = false;
         pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
         pm.sectionHeader = nullptr;
         buf_malloc_push(mappingsToPrint, pm);
-        if (mapping->action == Input::Action::ShowInputMap) {
+        if (mapping->action == Input::Action::ShowControls) {
             showDialogMapping = buf_end(mappingsToPrint) - 1;
         }
     }
@@ -950,26 +952,26 @@ static void showInputMapDialog(SDL_Window *mainWindow,
         PrintableControl pm;
         pm.isCtrlDown = true;
         pm.keyCode = mapping->code;
-        pm.isControllerControl = false;
+        pm.isGamepadControl = false;
         pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
         pm.sectionHeader = nullptr;
         buf_malloc_push(mappingsToPrint, pm);
-        if (mapping->action == Input::Action::ShowInputMap) {
+        if (mapping->action == Input::Action::ShowControls) {
             showDialogMapping = buf_end(mappingsToPrint) - 1;
         }
     }
     {
         PrintableControl pm;
-        pm.sectionHeader = ENDL "[[Controller]]" ENDL;
+        pm.sectionHeader = ENDL "[[Gamepad]]" ENDL;
         pm.stringToPrint = nullptr;
         buf_malloc_push(mappingsToPrint, pm);
     }
-    foribuf (controllerMap->mappings) {
-        Input::Mapping *mapping = &controllerMap->mappings[i];
+    foribuf (gamepadMap->mappings) {
+        Input::Mapping *mapping = &gamepadMap->mappings[i];
         PrintableControl pm;
         pm.isCtrlDown = false;
         pm.keyCode = mapping->code;
-        pm.isControllerControl = true;
+        pm.isGamepadControl = true;
         pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
         pm.sectionHeader = nullptr;
         buf_malloc_push(mappingsToPrint, pm);
@@ -980,7 +982,7 @@ static void showInputMapDialog(SDL_Window *mainWindow,
            longestStringSize = buf_len(mappingsToPrint[i].stringToPrint);
        }
     }
-    char *keymapDialog = buf_malloc_string("Below are the keyboard and controller controls for GBEmu." ENDL
+    char *keymapDialog = buf_malloc_string("Below are the keyboard and gamepad controls for GBEmu." ENDL
                                            );
     if (showDialogMapping) {
         buf_malloc_strcat(keymapDialog, "You can pull this message up at any time with "); 
@@ -1004,10 +1006,10 @@ static void showInputMapDialog(SDL_Window *mainWindow,
         }
         
         buf_malloc_strcat(keymapDialog, " ->  ");
-        if (mappingsToPrint[i].isControllerControl) {
-            forjarr (controllerMappingToSDLButton) {
-                if (controllerMappingToSDLButton[j] == mappingsToPrint[i].keyCode) {
-                    buf_malloc_strcat(keymapDialog,controllerMappingToString[j]);
+        if (mappingsToPrint[i].isGamepadControl) {
+            forjarr (gamepadMappingToSDLButton) {
+                if (gamepadMappingToSDLButton[j] == mappingsToPrint[i].keyCode) {
+                    buf_malloc_strcat(keymapDialog, gamepadMappingToString[j]);
                     break;
                 }
             }
@@ -1044,20 +1046,20 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
             ENDL
             "//Control Mappings" ENDL 
             ENDL
-            "Up = Key %s, Controller Up" ENDL 
-            "Down = Key %s,  Controller Down" ENDL
-            "Left = Key %s, Controller Left" ENDL
-            "Right = Key %s, Controller Right" ENDL
+            "Up = Key %s, Gamepad Up" ENDL 
+            "Down = Key %s,  Gamepad Down" ENDL
+            "Left = Key %s, Gamepad Left" ENDL
+            "Right = Key %s, Gamepad Right" ENDL
             ENDL 
-            "Start = Key Enter, Controller Start" ENDL 
-            "Select = Key %s, Controller Back" ENDL
+            "Start = Key Enter, Gamepad Start" ENDL 
+            "Select = Key %s, Gamepad Back" ENDL
             ENDL 
-            "A = Key %s, Controller A" ENDL 
-            "B = Key %s, Controller B" ENDL
+            "A = Key %s, Gamepad A" ENDL 
+            "B = Key %s, Gamepad B" ENDL
             ENDL
-            "Rewind = Key Left, Controller LeftBumper" ENDL
-            "Step = Key %s" ENDL
-            "Continue = Key %s" ENDL
+            "Rewind = Key Left, Gamepad LeftBumper" ENDL
+            "DebuggerStep = Key %s" ENDL
+            "DebuggerContinue = Key %s" ENDL
             ENDL
             "Mute = Key " CTRL "%s" ENDL
             "Pause = Key " CTRL "%s" ENDL
@@ -1065,28 +1067,28 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
             "ShowDebugger = Key " CTRL "%s" ENDL
             "FullScreen = Key " CTRL "%s" ENDL
             "ShowHomePath = Key %s" ENDL
-            "ShowInputMap = Key " CTRL "%s" ENDL
+            "ShowControls = Key " CTRL "%s" ENDL
             ENDL
             "//Misc" ENDL
             "ScreenScale = 4";
         char *fileContents = nullptr;
         buf_gen_memory_printf(fileContents, defaultConfigFileContents, 
-                              utf8CharFromScancode(SDL_SCANCODE_W, 'W').string,
-                              utf8CharFromScancode(SDL_SCANCODE_S, 'S').string, 
-                              utf8CharFromScancode(SDL_SCANCODE_A, 'A').string,
-                              utf8CharFromScancode(SDL_SCANCODE_D, 'D').string,
+                              utf8CharFromScancode(SDL_SCANCODE_W, 'w').string,
+                              utf8CharFromScancode(SDL_SCANCODE_S, 's').string, 
+                              utf8CharFromScancode(SDL_SCANCODE_A, 'a').string,
+                              utf8CharFromScancode(SDL_SCANCODE_D, 'd').string,
                               utf8CharFromScancode(SDL_SCANCODE_BACKSLASH, '\\').string,
                               utf8CharFromScancode(SDL_SCANCODE_SLASH, '/').string,
                               utf8CharFromScancode(SDL_SCANCODE_PERIOD, '.').string,
-                              utf8CharFromScancode(SDL_SCANCODE_N, 'N').string,
-                              utf8CharFromScancode(SDL_SCANCODE_C, 'C').string,
-                              utf8CharFromScancode(SDL_SCANCODE_U, 'U').string,
-                              utf8CharFromScancode(SDL_SCANCODE_P, 'P').string,
-                              utf8CharFromScancode(SDL_SCANCODE_R, 'R').string,
-                              utf8CharFromScancode(SDL_SCANCODE_B, 'B').string,
-                              utf8CharFromScancode(SDL_SCANCODE_F, 'F').string,
-                              utf8CharFromScancode(SDL_SCANCODE_H, 'H').string,
-                              utf8CharFromScancode(SDL_SCANCODE_N, 'N').string);
+                              utf8CharFromScancode(SDL_SCANCODE_N, 'n').string,
+                              utf8CharFromScancode(SDL_SCANCODE_C, 'c').string,
+                              utf8CharFromScancode(SDL_SCANCODE_U, 'u').string,
+                              utf8CharFromScancode(SDL_SCANCODE_P, 'p').string,
+                              utf8CharFromScancode(SDL_SCANCODE_R, 'r').string,
+                              utf8CharFromScancode(SDL_SCANCODE_B, 'b').string,
+                              utf8CharFromScancode(SDL_SCANCODE_F, 'f').string,
+                              utf8CharFromScancode(SDL_SCANCODE_H, 'h').string,
+                              utf8CharFromScancode(SDL_SCANCODE_N, 'n').string);
                                                      
         auto writeResult = writeDataToFile(fileContents, (isize)strlen(fileContents), configFilePath);
         switch (writeResult) {
@@ -1139,7 +1141,7 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     CASE_ERROR(UnknownConfigKey, "Unrecognized config option");
     CASE_ERROR(UnrecognizedKeyMapping, "Unrecognized key to map to");
     CASE_ERROR(NumberKeyMappingNotAllowed, "Mapping to a number key is not supported");
-    CASE_ERROR(UnrecognizedControllerMapping, "Unrecognized controller button to map to");
+    CASE_ERROR(UnrecognizedGamepadMapping, "Unrecognized gamepad button to map to");
     CASE_ERROR(MissingEquals, "Equals sign expected here");
     CASE_ERROR(ExtraneousToken, "Extraneous token; new line expected");
     CASE_ERROR(MissingComma, "Comma expected here");
@@ -1178,11 +1180,11 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
         CASE_MAPPING(ShowDebugger);
         CASE_MAPPING(ShowHomePath);
         CASE_MAPPING(Rewind);
-        CASE_MAPPING(Step);
-        CASE_MAPPING(Continue);
+        CASE_MAPPING(DebuggerStep);
+        CASE_MAPPING(DebuggerContinue);
         CASE_MAPPING(Reset);
         CASE_MAPPING(FullScreen);
-        CASE_MAPPING(ShowInputMap);
+        CASE_MAPPING(ShowControls);
         case ConfigKeyType::ScreenScale: {
            if (cp->numValues != 1) {
                ALERT_EXIT("ScreenScale config option must only take one value.");
@@ -1226,14 +1228,14 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     freeParserResult(&result);
     
     if (isNewConfig) {
-        showInputMapDialog(nullptr, &input->keysMap, &input->ctrlKeysMap, &input->controllerMap);
+        showInputMapDialog(nullptr, &input->keysMap, &input->ctrlKeysMap, &input->gamepadMap);
     }
     return true;
 }
 
 static void 
 mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
-         SDL_AudioDeviceID audioDeviceID, SDL_GameController **controller, const char *romFileName,
+         SDL_AudioDeviceID audioDeviceID, SDL_GameController **gamepad, const char *romFileName,
          bool shouldEnableDebugMode, DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug, ProgramState *programState) {
     char filePath[MAX_PATH_LEN];
     
@@ -1550,19 +1552,19 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
     TimeUS timeNotificationIsShown = 0;
     TimeUS startNotificationTime = nowInMicroseconds();
     
-    //controller init
-    SDL_JoystickID controllerID = 0;
+    //gamepad init
+    SDL_JoystickID gamepadID = 0;
     {
         fori (SDL_NumJoysticks()) {
             if (SDL_IsGameController((int)i)) {
-                *controller = SDL_GameControllerOpen((int)i);
-                if (*controller) {
-                    controllerID = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(*controller));
+                *gamepad = SDL_GameControllerOpen((int)i);
+                if (*gamepad) {
+                    gamepadID = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(*gamepad));
                     CO_LOG("%s attached", SDL_GameControllerNameForIndex((int)i));
                     NOTIFY(notifications, "%s attached", SDL_GameControllerNameForIndex((int)i));
                 }
                 else {
-                    ALERT("Could not use controller!");
+                    ALERT("Could not use gamepad!");
                 }
                 break;
             }
@@ -1683,63 +1685,63 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
 
                 case SDL_CONTROLLERBUTTONUP:  
                 case SDL_CONTROLLERBUTTONDOWN:  {
-                    if (*controller && e.cbutton.which == controllerID) {
+                    if (*gamepad && e.cbutton.which == gamepadID) {
                         processButton((SDL_GameControllerButton)e.cbutton.button, e.type == SDL_CONTROLLERBUTTONDOWN, &input->newState,
-                                      &input->controllerMap);
+                                      &input->gamepadMap);
                     }
                     
                 } break;
                 case SDL_CONTROLLERAXISMOTION: {
-                    if (*controller && e.caxis.which == controllerID) {
+                    if (*gamepad && e.caxis.which == gamepadID) {
                         switch (e.caxis.axis) {
                         case SDL_CONTROLLER_AXIS_LEFTX: {
                             input->newState.xAxis = e.caxis.value;
                             if (e.caxis.value < ANALOG_STICK_DEADZONE && e.caxis.value > -ANALOG_STICK_DEADZONE) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->controllerMap);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->gamepadMap);
                             }
                             else if (e.caxis.value >= ANALOG_STICK_DEADZONE && 
                                      e.caxis.value > abs(input->newState.yAxis)) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->controllerMap);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, true, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, true, &input->newState, &input->gamepadMap);
                             }
                             else if (e.caxis.value <= -ANALOG_STICK_DEADZONE && 
                                      abs(e.caxis.value) > abs(input->newState.yAxis)) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, true, &input->newState, &input->controllerMap);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, true, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->gamepadMap);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_LEFTY: {
                             input->newState.yAxis = e.caxis.value;
                             if (e.caxis.value < ANALOG_STICK_DEADZONE && e.caxis.value > -ANALOG_STICK_DEADZONE) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->controllerMap);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->gamepadMap);
                             }
                             else if (e.caxis.value >= ANALOG_STICK_DEADZONE && 
                                      e.caxis.value > abs(input->newState.xAxis)) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->controllerMap);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true, &input->newState, &input->gamepadMap);
                             }
                             else if (e.caxis.value <= -ANALOG_STICK_DEADZONE && 
                                      abs(e.caxis.value) > abs(input->newState.xAxis)) {
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, true, &input->newState, &input->controllerMap);
-                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->controllerMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, true, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->gamepadMap);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_TRIGGERLEFT: {
-                            if (e.caxis.value > ANALOG_STICK_DEADZONE) {
-                                processButton(controllerMappingToSDLButton[(int)ControllerMappingValue::LeftTrigger], true, &input->newState, &input->controllerMap);
+                            if (e.caxis.value > ANALOG_TRIGGER_DEADZONE) {
+                                processButton(gamepadMappingToSDLButton[(int)GamepadMappingValue::LeftTrigger], true, &input->newState, &input->gamepadMap);
                             }
-                            else if (e.caxis.value <= ANALOG_STICK_DEADZONE) {
-                                processButton(controllerMappingToSDLButton[(int)ControllerMappingValue::LeftTrigger], false, &input->newState, &input->controllerMap);
+                            else if (e.caxis.value <= ANALOG_TRIGGER_DEADZONE) {
+                                processButton(gamepadMappingToSDLButton[(int)GamepadMappingValue::LeftTrigger], false, &input->newState, &input->gamepadMap);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: {
-                            if (e.caxis.value > ANALOG_STICK_DEADZONE) {
-                                processButton(controllerMappingToSDLButton[(int)ControllerMappingValue::RightTrigger], true, &input->newState, &input->controllerMap);
+                            if (e.caxis.value > ANALOG_TRIGGER_DEADZONE) {
+                                processButton(gamepadMappingToSDLButton[(int)GamepadMappingValue::RightTrigger], true, &input->newState, &input->gamepadMap);
                             }
-                            else if (e.caxis.value <= ANALOG_STICK_DEADZONE) {
-                                processButton(controllerMappingToSDLButton[(int)ControllerMappingValue::RightTrigger], false, &input->newState, &input->controllerMap);
+                            else if (e.caxis.value <= ANALOG_TRIGGER_DEADZONE) {
+                                processButton(gamepadMappingToSDLButton[(int)GamepadMappingValue::RightTrigger], false, &input->newState, &input->gamepadMap);
                             }
                         } break;
                         }
@@ -1748,30 +1750,30 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                 } break;
 
                 case SDL_CONTROLLERDEVICEADDED: {
-                    if (*controller) {
+                    if (*gamepad) {
                         break;
                     }
                     int i = e.cdevice.which;
-                    *controller = SDL_GameControllerOpen(i);
-                    controllerID = i;
-                    if (controller) {
+                    *gamepad = SDL_GameControllerOpen(i);
+                    gamepadID = i;
+                    if (gamepad) {
                         NOTIFY(notifications, "%s attached", SDL_GameControllerNameForIndex(i));
                         CO_LOG("%s attached at index %d", SDL_GameControllerNameForIndex(i), i);
                     }
                     else {
-                        CO_ERR("Could not open controller");
+                        CO_ERR("Could not open gamepad");
                     }
                     break;
                 } break;
 
                 case SDL_CONTROLLERDEVICEREMOVED: {
-                    auto controllerToClose = SDL_GameControllerFromInstanceID(e.cdevice.which);
+                    auto gamepadToClose = SDL_GameControllerFromInstanceID(e.cdevice.which);
 
-                    if (*controller == controllerToClose) {
+                    if (*gamepad == gamepadToClose) {
                         NOTIFY(notifications, "Controller detached");
                         CO_LOG("Controller detached");
-                        SDL_GameControllerClose(*controller);
-                        *controller = nullptr;
+                        SDL_GameControllerClose(*gamepad);
+                        *gamepad = nullptr;
                     }
 
                 } break;
@@ -1830,8 +1832,8 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                     gbDebug->isEnabled = true;
                 }
             }
-            if (isActionPressed(Input::Action::ShowInputMap, input)) {
-                showInputMapDialog(window, &input->keysMap, &input->ctrlKeysMap, &input->controllerMap);
+            if (isActionPressed(Input::Action::ShowControls, input)) {
+                showInputMapDialog(window, &input->keysMap, &input->ctrlKeysMap, &input->gamepadMap);
             }
             if (isActionPressed(Input::Action::FullScreen, input)) {
                 if (programState->isFullScreen) {
@@ -2034,7 +2036,7 @@ int main(int argc, char **argv) {
     SDL_Texture *screenTexture = nullptr;
     SDL_AudioSpec as;
     SDL_AudioDeviceID audioDeviceID = 0;
-    SDL_GameController *controller = nullptr;
+    SDL_GameController *gamepad = nullptr;
 	ProgramState *programState;
     char *romsDir = nullptr;
     const char *openDialogPath = nullptr;
@@ -2300,7 +2302,6 @@ int main(int argc, char **argv) {
         goto exit;
     }
 
-    //open controller if present
 
 
     {
@@ -2316,15 +2317,15 @@ int main(int argc, char **argv) {
             }
         }
 
-        mainLoop(window, renderer, screenTexture, audioDeviceID, &controller, romFileName, shouldEnableDebugMode, debuggerContext, gbDebug, programState);
+        mainLoop(window, renderer, screenTexture, audioDeviceID, &gamepad, romFileName, shouldEnableDebugMode, debuggerContext, gbDebug, programState);
         
     }
 
 
 exit:
 
-    if (controller) {
-        SDL_GameControllerClose(controller);
+    if (gamepad) {
+        SDL_GameControllerClose(gamepad);
     }
 
     SDL_DestroyRenderer(renderer);

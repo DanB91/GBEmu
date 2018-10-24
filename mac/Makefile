@@ -12,19 +12,18 @@ PLATFORM_OBJ += build/imgui.o
 
 VERSION=$(shell cat ../version.txt)
 
-CPPFLAGS=-g -fno-exceptions -Wall -Wextra  -std=c++11  -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast $(CFLAGS)
+CPPFLAGS=-g -fno-exceptions -Wall -Wextra  -std=c++11  -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -I/Library/Frameworks/SDL2.framework/Headers
 CC=clang++
 
 CTIME = ./ctime_mac
 
-CFLAGS := -I/Library/Frameworks/SDL2.framework/Headers 
 LDFLAGS += -framework OpenGL -framework CoreFoundation -framework AppKit -Fresources -framework SDL2
 PLATFORM_OBJ += build/cocoa.o
 
-profile: CPPFLAGS+=-O2 -DCO_PROFILE -g 
+profile: CPPFLAGS+=-O2 -DCO_PROFILE -DNDEBUG -g 
 profile: ctime_begin generate_version build build/gbemu_release ctime_end
 
-release: CPPFLAGS+=-O2
+release: CPPFLAGS+=-O2 -DNDEBUG
 release: ctime_begin  generate_version build build/gbemu_release ctime_end
 
 debug: CPPFLAGS+=-DCO_DEBUG -DCO_PROFILE -g

@@ -11,7 +11,7 @@ enum class ParserStatus {
     MissingEquals,
     ExtraneousToken,
     UnrecognizedKeyMapping,
-    UnrecognizedControllerMapping,
+    UnrecognizedGamepadMapping,
     UnexpectedNewLine,
     MissingComma
 };
@@ -19,9 +19,9 @@ enum class ParserStatus {
 enum class ConfigKeyType{
     Up, Down, Left, Right,
     A, B, Start, Select, Rewind,
-    Step, Continue, Mute,
+    DebuggerStep, DebuggerContinue, Mute,
     ScreenScale, Pause, ShowDebugger,
-    Reset, ShowHomePath, FullScreen, ShowInputMap,
+    Reset, ShowHomePath, FullScreen, ShowControls,
 };
 
 struct NonNullTerminatedString {
@@ -36,7 +36,7 @@ struct ConfigKey {
 };
 
 enum class ConfigValueType {
-    ControllerMapping, KeyMapping, Integer
+    GamepadMapping, KeyMapping, Integer
 };
 
 enum class KeyMappingType {
@@ -47,9 +47,9 @@ enum class MovementKeyMappingValue {
     Up, Down, Left, Right
 };
 
-enum class ControllerMappingValue {
+enum class GamepadMappingValue {
     A=0, B, X, Y, Start, Back, LeftBumper, RightBumper, 
-    LeftTrigger, RightTrigger, Up, Down, Left, Right, Home
+    LeftTrigger, RightTrigger, Up, Down, Left, Right, Guide
 };
 struct KeyMapping {
     KeyMappingType type; 
@@ -63,8 +63,8 @@ struct KeyMapping {
     int line;
     NonNullTerminatedString textFromFile;
 };
-struct ControllerMapping {
-   ControllerMappingValue value; 
+struct GamepadMapping {
+   GamepadMappingValue value; 
    int posInLine;
    int line;
 };
@@ -74,7 +74,7 @@ struct ConfigValue {
     NonNullTerminatedString textFromFile;
     union {
        KeyMapping keyMapping;
-       ControllerMapping controllerMapping;
+       GamepadMapping gamepadMapping;
        int intValue; 
     };
     int posInLine;

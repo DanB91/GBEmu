@@ -5,7 +5,7 @@
 
 enum class ConfigTokenType {
     Begin, Identifier, Integer,
-    Character, KeyKW, ControllerKW,
+    Character, KeyKW, GamepadKW,
     CtrlKW, Comma,
     Equals, NewLine, End
 };
@@ -130,14 +130,14 @@ repeat:
        stream += 3;
        currentPosInLine += 3;
     }
-    else if (tolower(stream[0]) == 'c' && tolower(stream[1]) == 'o' && tolower(stream[2]) == 'n' && 
-             tolower(stream[3]) == 't' && tolower(stream[4]) == 'r' && tolower(stream[5]) == 'o' &&
-             tolower(stream[6]) == 'l' && tolower(stream[7]) == 'l' && tolower(stream[8]) == 'e' && tolower(stream[9]) == 'r') {
-       currentToken.type = ConfigTokenType::ControllerKW;
+    else if (tolower(stream[0]) == 'g' && tolower(stream[1]) == 'a' && tolower(stream[2]) == 'm' && 
+             tolower(stream[3]) == 'e' && tolower(stream[4]) == 'p' && tolower(stream[5]) == 'a' &&
+             tolower(stream[6]) == 'd') {
+       currentToken.type = ConfigTokenType::GamepadKW;
        currentToken.stringValue.data = stream;
-       currentToken.stringValue.len = 10;
-       stream += 10 ;
-       currentPosInLine += 10;
+       currentToken.stringValue.len = 7;
+       stream += 7 ;
+       currentPosInLine += 7;
     }
     else if (tolower(stream[0]) == 'c' && tolower(stream[1]) == 'o' && tolower(stream[2]) == 'm' && 
              tolower(stream[3]) == 'm' && tolower(stream[4]) == 'a' && tolower(stream[5]) == 'n' &&
@@ -234,62 +234,62 @@ static inline bool isToken(ConfigTokenType tokenType) {
     return currentToken.type == tokenType;
 }
 
-static ParserStatus controllerMapping(ControllerMapping *outControllerMapping) {
-    outControllerMapping->posInLine = currentPosInLine;
-    outControllerMapping->line = currentLineNumber;
+static ParserStatus gamepadMapping(GamepadMapping *outGamepadMapping) {
+    outGamepadMapping->posInLine = currentPosInLine;
+    outGamepadMapping->line = currentLineNumber;
     switch (currentToken.type) {
     case ConfigTokenType::Identifier:  {
         if (CMP_STR("a")) {
-            outControllerMapping->value = ControllerMappingValue::A;
+            outGamepadMapping->value = GamepadMappingValue::A;
         }
         else if (CMP_STR("b")) {
-            outControllerMapping->value = ControllerMappingValue::B;
+            outGamepadMapping->value = GamepadMappingValue::B;
         }
         else if (CMP_STR("x")) {
-            outControllerMapping->value = ControllerMappingValue::X;
+            outGamepadMapping->value = GamepadMappingValue::X;
         }
         else if (CMP_STR("y")) {
-            outControllerMapping->value = ControllerMappingValue::Y;
+            outGamepadMapping->value = GamepadMappingValue::Y;
         }
         else if (CMP_STR("up")) {
-            outControllerMapping->value = ControllerMappingValue::Up;
+            outGamepadMapping->value = GamepadMappingValue::Up;
         }
         else if (CMP_STR("down")) {
-            outControllerMapping->value = ControllerMappingValue::Down;
+            outGamepadMapping->value = GamepadMappingValue::Down;
         }
         else if (CMP_STR("left")) {
-            outControllerMapping->value = ControllerMappingValue::Left;
+            outGamepadMapping->value = GamepadMappingValue::Left;
         }
         else if (CMP_STR("right")) {
-            outControllerMapping->value = ControllerMappingValue::Right;
+            outGamepadMapping->value = GamepadMappingValue::Right;
         }
         else if (CMP_STR("start")) {
-            outControllerMapping->value = ControllerMappingValue::Start;
+            outGamepadMapping->value = GamepadMappingValue::Start;
         }
         else if (CMP_STR("back")) {
-            outControllerMapping->value = ControllerMappingValue::Back;
+            outGamepadMapping->value = GamepadMappingValue::Back;
         }
         else if (CMP_STR("leftbumper")) {
-            outControllerMapping->value = ControllerMappingValue::LeftBumper;
+            outGamepadMapping->value = GamepadMappingValue::LeftBumper;
         }
         else if (CMP_STR("rightbumper")) {
-            outControllerMapping->value = ControllerMappingValue::RightBumper;
+            outGamepadMapping->value = GamepadMappingValue::RightBumper;
         }
         else if (CMP_STR("lefttrigger")) {
-            outControllerMapping->value = ControllerMappingValue::LeftTrigger;
+            outGamepadMapping->value = GamepadMappingValue::LeftTrigger;
         }
         else if (CMP_STR("righttrigger")) {
-            outControllerMapping->value = ControllerMappingValue::RightTrigger;
+            outGamepadMapping->value = GamepadMappingValue::RightTrigger;
         }
-        else if (CMP_STR("home")) {
-            outControllerMapping->value = ControllerMappingValue::Home;
+        else if (CMP_STR("guide")) {
+            outGamepadMapping->value = GamepadMappingValue::Guide;
         }
         else {
-            return ParserStatus::UnrecognizedControllerMapping;
+            return ParserStatus::UnrecognizedGamepadMapping;
         }
     } break;
     default:  {
-        return ParserStatus::UnrecognizedControllerMapping; 
+        return ParserStatus::UnrecognizedGamepadMapping; 
     } break;
     }
     
@@ -380,13 +380,13 @@ static ParserStatus configValue(ConfigValue *outConfigValue) {
                 (outConfigValue->keyMapping.textFromFile.data - (outConfigValue->textFromFile.data + outConfigValue->textFromFile.len)) + 
                 outConfigValue->keyMapping.textFromFile.len;
     }
-    else if (isToken(ConfigTokenType::ControllerKW)) {
-        outConfigValue->type = ConfigValueType::ControllerMapping;
+    else if (isToken(ConfigTokenType::GamepadKW)) {
+        outConfigValue->type = ConfigValueType::GamepadMapping;
         outConfigValue->textFromFile = currentToken.stringValue;
         nextToken();
         outConfigValue->textFromFile.len += (currentToken.stringValue.data - outConfigValue->textFromFile.data - 
                                              outConfigValue->textFromFile.len) + currentToken.stringValue.len;
-        auto res = controllerMapping(&outConfigValue->controllerMapping);
+        auto res = gamepadMapping(&outConfigValue->gamepadMapping);
         if (res != ParserStatus::OK) {
             return res;
         }
@@ -435,11 +435,11 @@ static ParserStatus configKey(ConfigKey *outConfigKey) {
         else if (CMP_STR("rewind")) {
             outConfigKey->type = ConfigKeyType::Rewind;
         }
-        else if (CMP_STR("step")) {
-            outConfigKey->type = ConfigKeyType::Step;
+        else if (CMP_STR("debuggerstep")) {
+            outConfigKey->type = ConfigKeyType::DebuggerStep;
         }
-        else if (CMP_STR("continue")) {
-            outConfigKey->type = ConfigKeyType::Continue;
+        else if (CMP_STR("debuggercontinue")) {
+            outConfigKey->type = ConfigKeyType::DebuggerContinue;
         }
         else if (CMP_STR("mute")) {
             outConfigKey->type = ConfigKeyType::Mute;
@@ -462,8 +462,8 @@ static ParserStatus configKey(ConfigKey *outConfigKey) {
         else if (CMP_STR("fullscreen")) {
             outConfigKey->type = ConfigKeyType::FullScreen;
         }
-        else if (CMP_STR("showinputmap")) {
-            outConfigKey->type = ConfigKeyType::ShowInputMap;
+        else if (CMP_STR("showcontrols")) {
+            outConfigKey->type = ConfigKeyType::ShowControls;
         }
         else {
             return ParserStatus::UnknownConfigKey;
