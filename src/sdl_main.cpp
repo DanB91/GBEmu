@@ -227,11 +227,12 @@ struct DebuggerPlatformContext {
     GLint attribLocationTex;
     GLuint vboID, vaoID, elementsID;
     GLuint fontTexture;
-
+    GameBoyDebug *gbDebug;
+#ifdef MT_RENDER
     //render thread data
     Thread *renderThread;
     volatile bool isRunning;
-    GameBoyDebug *gbDebug;
+#endif
     
 };
 
@@ -390,6 +391,7 @@ static void processButton(int button, bool isDown, Input::State *input, Input::C
 
 static void
 closeDebugger(DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug) {
+#ifdef MT_RENDER
     if (!debuggerContext->isRunning) {
         return;
     }
@@ -399,6 +401,11 @@ closeDebugger(DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug) {
         broadcastCondition(gbDebug->renderCondition);
     }
     waitForAndFreeThread(debuggerContext->renderThread);
+#else
+    if (!gbDebug || !gbDebug->isEnabled) {
+        return;
+    }
+#endif
     ImGui::DestroyContext();
 
     if (debuggerContext->glContext) {
@@ -415,6 +422,143 @@ closeDebugger(DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug) {
 
 }
 
+static void renderDebugger(GameBoyDebug *gbDebug, DebuggerPlatformContext *platformContext) {
+
+    SDL_GL_MakeCurrent(platformContext->window, platformContext->glContext);
+    glClearColor(1.0f, 0, 0, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    foriarr (gbDebug->tiles) {
+        auto tile = gbDebug->tiles[i];
+
+        //TODO: might have to do this update out of this thread
+        if (tile.needsUpdate) {
+            u32 pixels[TILE_HEIGHT * DEFAULT_SCREEN_SCALE * TILE_WIDTH * DEFAULT_SCREEN_SCALE];
+            for (i64 y = 0; y < TILE_HEIGHT * DEFAULT_SCREEN_SCALE; y+=DEFAULT_SCREEN_SCALE) {
+                for (i64 x = 0; x < TILE_WIDTH * DEFAULT_SCREEN_SCALE; x+=DEFAULT_SCREEN_SCALE) {
+                    u32 pixel;
+                    switch ((PaletteColor)tile.pixels[(y/DEFAULT_SCREEN_SCALE)*TILE_WIDTH + (x/DEFAULT_SCREEN_SCALE)]) {
+                    case PaletteColor::White: pixel = 0xFFFFFFFF; break;
+                    case PaletteColor::LightGray: pixel = 0xFFAAAAAA; break;
+                    case PaletteColor::DarkGray: pixel = 0xFF555555; break;
+                    case PaletteColor::Black: pixel = 0xFF000000; break;
+                    }
+
+                    for (i64 y2 = 0; y2 < DEFAULT_SCREEN_SCALE; y2++) {
+                        for (i64 x2 = 0; x2 < DEFAULT_SCREEN_SCALE; x2++) {
+                            pixels[((y+y2)*TILE_WIDTH*DEFAULT_SCREEN_SCALE) + (x + x2)] = pixel;
+                        }
+                    }
+
+                }
+            }
+            glBindTexture(GL_TEXTURE_2D, (GLuint)(u64)tile.textureID);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+            tile.needsUpdate = false;
+        }
+    }
+
+    auto drawData = ImGui::GetDrawData();
+    // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
+    ImGuiIO& io = ImGui::GetIO();
+    int fb_width = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
+    int fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
+    CO_ASSERT(fb_width != 0 && fb_height != 0);
+    drawData->ScaleClipRects(io.DisplayFramebufferScale);
+
+    // Backup GL state
+    GLint last_active_texture; glGetIntegerv(GL_ACTIVE_TEXTURE, &last_active_texture);
+    glActiveTexture(GL_TEXTURE0);
+    GLint last_program; glGetIntegerv(GL_CURRENT_PROGRAM, &last_program);
+    GLint last_texture; glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
+    GLint last_array_buffer; glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_array_buffer);
+    GLint last_element_array_buffer; glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &last_element_array_buffer);
+    GLint last_vertex_array; glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &last_vertex_array);
+    GLint last_blend_src_rgb; glGetIntegerv(GL_BLEND_SRC_RGB, &last_blend_src_rgb);
+    GLint last_blend_dst_rgb; glGetIntegerv(GL_BLEND_DST_RGB, &last_blend_dst_rgb);
+    GLint last_blend_src_alpha; glGetIntegerv(GL_BLEND_SRC_ALPHA, &last_blend_src_alpha);
+    GLint last_blend_dst_alpha; glGetIntegerv(GL_BLEND_DST_ALPHA, &last_blend_dst_alpha);
+    GLint last_blend_equation_rgb; glGetIntegerv(GL_BLEND_EQUATION_RGB, &last_blend_equation_rgb);
+    GLint last_blend_equation_alpha; glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &last_blend_equation_alpha);
+    GLint last_viewport[4]; glGetIntegerv(GL_VIEWPORT, last_viewport);
+    GLint last_scissor_box[4]; glGetIntegerv(GL_SCISSOR_BOX, last_scissor_box);
+    GLboolean last_enable_blend = glIsEnabled(GL_BLEND);
+    GLboolean last_enable_cull_face = glIsEnabled(GL_CULL_FACE);
+    GLboolean last_enable_depth_test = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean last_enable_scissor_test = glIsEnabled(GL_SCISSOR_TEST);
+
+    // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_SCISSOR_TEST);
+
+    // Setup viewport, orthographic projection matrix
+    glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
+    const float ortho_projection[4][4] =
+    {
+        { 2.0f/io.DisplaySize.x, 0.0f,                   0.0f, 0.0f },
+        { 0.0f,                  2.0f/-io.DisplaySize.y, 0.0f, 0.0f },
+        { 0.0f,                  0.0f,                  -1.0f, 0.0f },
+        {-1.0f,                  1.0f,                   0.0f, 1.0f },
+    };
+    glUseProgram(platformContext->shaderID);
+    glUniform1i(platformContext->attribLocationTex, 0);
+    glUniformMatrix4fv(platformContext->attribLocationProjMtx, 1, GL_FALSE, &ortho_projection[0][0]);
+    glBindVertexArray(platformContext->vaoID);
+
+    for (int n = 0; n < drawData->CmdListsCount; n++)
+    {
+        const ImDrawList* cmd_list = drawData->CmdLists[n];
+        const ImDrawIdx* idx_buffer_offset = 0;
+
+        glBindBuffer(GL_ARRAY_BUFFER, platformContext->vboID);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->VtxBuffer.Size * (int)sizeof(ImDrawVert)), (const GLvoid*)cmd_list->VtxBuffer.Data, GL_STREAM_DRAW);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, platformContext->elementsID);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->IdxBuffer.Size * (int)sizeof(ImDrawIdx)), (const GLvoid*)cmd_list->IdxBuffer.Data, GL_STREAM_DRAW);
+
+        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+        {
+            const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+            if (pcmd->UserCallback)
+            {
+                pcmd->UserCallback(cmd_list, pcmd);
+            }
+            else
+            {
+                glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
+                glScissor((int)pcmd->ClipRect.x, (int)(fb_height - pcmd->ClipRect.w), (int)(pcmd->ClipRect.z - pcmd->ClipRect.x), (int)(pcmd->ClipRect.w - pcmd->ClipRect.y));
+                glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount, sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, idx_buffer_offset);
+            }
+            idx_buffer_offset += pcmd->ElemCount;
+        }
+    }
+
+    // Restore modified GL state
+    glUseProgram((GLuint)last_program);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)last_texture);
+    glActiveTexture((GLuint)last_active_texture);
+    glBindVertexArray((GLuint)last_vertex_array);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)last_array_buffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)last_element_array_buffer);
+    glBlendEquationSeparate((GLuint)last_blend_equation_rgb, (GLuint)last_blend_equation_alpha);
+    glBlendFuncSeparate((GLuint)last_blend_src_rgb, (GLuint)last_blend_dst_rgb, (GLuint)last_blend_src_alpha, (GLuint)last_blend_dst_alpha);
+    if (last_enable_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (last_enable_cull_face) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    if (last_enable_depth_test) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (last_enable_scissor_test) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+    glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
+    glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
+
+
+    SDL_GL_SwapWindow(platformContext->window);
+    CO_ASSERT(glGetError() == GL_NO_ERROR);
+}
+
+#ifdef MT_RENDER
 static void renderDebuggerThread(void *arg) {
     auto platformContext = (DebuggerPlatformContext*)arg;
     auto gbDebug = platformContext->gbDebug;
@@ -424,142 +568,12 @@ static void renderDebuggerThread(void *arg) {
             waitForCondition(gbDebug->renderCondition, gbDebug->debuggerMutex);
         }
         gbDebug->shouldRender = false;
-        SDL_GL_MakeCurrent(platformContext->window, platformContext->glContext);
-        glClearColor(1.0f, 0, 0, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        foriarr (gbDebug->tiles) {
-            auto tile = gbDebug->tiles[i];
-
-            //TODO: might have to do this update out of this thread
-            if (tile.needsUpdate) {
-                u32 pixels[TILE_HEIGHT * DEFAULT_SCREEN_SCALE * TILE_WIDTH * DEFAULT_SCREEN_SCALE];
-                for (i64 y = 0; y < TILE_HEIGHT * DEFAULT_SCREEN_SCALE; y+=DEFAULT_SCREEN_SCALE) {
-                    for (i64 x = 0; x < TILE_WIDTH * DEFAULT_SCREEN_SCALE; x+=DEFAULT_SCREEN_SCALE) {
-                        u32 pixel;
-                        switch ((PaletteColor)tile.pixels[(y/DEFAULT_SCREEN_SCALE)*TILE_WIDTH + (x/DEFAULT_SCREEN_SCALE)]) {
-                        case PaletteColor::White: pixel = 0xFFFFFFFF; break;
-                        case PaletteColor::LightGray: pixel = 0xFFAAAAAA; break;
-                        case PaletteColor::DarkGray: pixel = 0xFF555555; break;
-                        case PaletteColor::Black: pixel = 0xFF000000; break;
-                        }
-
-                        for (i64 y2 = 0; y2 < DEFAULT_SCREEN_SCALE; y2++) {
-                            for (i64 x2 = 0; x2 < DEFAULT_SCREEN_SCALE; x2++) {
-                                pixels[((y+y2)*TILE_WIDTH*DEFAULT_SCREEN_SCALE) + (x + x2)] = pixel;
-                            }
-                        }
-
-                    }
-                }
-                glBindTexture(GL_TEXTURE_2D, (GLuint)(u64)tile.textureID);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-                tile.needsUpdate = false;
-            }
-        }
-
-        auto drawData = ImGui::GetDrawData();
-        // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
-        ImGuiIO& io = ImGui::GetIO();
-        int fb_width = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
-        int fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
-        CO_ASSERT(fb_width != 0 && fb_height != 0);
-        drawData->ScaleClipRects(io.DisplayFramebufferScale);
-
-        // Backup GL state
-        GLint last_active_texture; glGetIntegerv(GL_ACTIVE_TEXTURE, &last_active_texture);
-        glActiveTexture(GL_TEXTURE0);
-        GLint last_program; glGetIntegerv(GL_CURRENT_PROGRAM, &last_program);
-        GLint last_texture; glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
-        GLint last_array_buffer; glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_array_buffer);
-        GLint last_element_array_buffer; glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &last_element_array_buffer);
-        GLint last_vertex_array; glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &last_vertex_array);
-        GLint last_blend_src_rgb; glGetIntegerv(GL_BLEND_SRC_RGB, &last_blend_src_rgb);
-        GLint last_blend_dst_rgb; glGetIntegerv(GL_BLEND_DST_RGB, &last_blend_dst_rgb);
-        GLint last_blend_src_alpha; glGetIntegerv(GL_BLEND_SRC_ALPHA, &last_blend_src_alpha);
-        GLint last_blend_dst_alpha; glGetIntegerv(GL_BLEND_DST_ALPHA, &last_blend_dst_alpha);
-        GLint last_blend_equation_rgb; glGetIntegerv(GL_BLEND_EQUATION_RGB, &last_blend_equation_rgb);
-        GLint last_blend_equation_alpha; glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &last_blend_equation_alpha);
-        GLint last_viewport[4]; glGetIntegerv(GL_VIEWPORT, last_viewport);
-        GLint last_scissor_box[4]; glGetIntegerv(GL_SCISSOR_BOX, last_scissor_box);
-        GLboolean last_enable_blend = glIsEnabled(GL_BLEND);
-        GLboolean last_enable_cull_face = glIsEnabled(GL_CULL_FACE);
-        GLboolean last_enable_depth_test = glIsEnabled(GL_DEPTH_TEST);
-        GLboolean last_enable_scissor_test = glIsEnabled(GL_SCISSOR_TEST);
-
-        // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled
-        glEnable(GL_BLEND);
-        glBlendEquation(GL_FUNC_ADD);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDisable(GL_CULL_FACE);
-        glDisable(GL_DEPTH_TEST);
-        glEnable(GL_SCISSOR_TEST);
-
-        // Setup viewport, orthographic projection matrix
-        glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
-        const float ortho_projection[4][4] =
-        {
-            { 2.0f/io.DisplaySize.x, 0.0f,                   0.0f, 0.0f },
-            { 0.0f,                  2.0f/-io.DisplaySize.y, 0.0f, 0.0f },
-            { 0.0f,                  0.0f,                  -1.0f, 0.0f },
-            {-1.0f,                  1.0f,                   0.0f, 1.0f },
-        };
-        glUseProgram(platformContext->shaderID);
-        glUniform1i(platformContext->attribLocationTex, 0);
-        glUniformMatrix4fv(platformContext->attribLocationProjMtx, 1, GL_FALSE, &ortho_projection[0][0]);
-        glBindVertexArray(platformContext->vaoID);
-
-        for (int n = 0; n < drawData->CmdListsCount; n++)
-        {
-            const ImDrawList* cmd_list = drawData->CmdLists[n];
-            const ImDrawIdx* idx_buffer_offset = 0;
-
-            glBindBuffer(GL_ARRAY_BUFFER, platformContext->vboID);
-            glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->VtxBuffer.Size * (int)sizeof(ImDrawVert)), (const GLvoid*)cmd_list->VtxBuffer.Data, GL_STREAM_DRAW);
-
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, platformContext->elementsID);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->IdxBuffer.Size * (int)sizeof(ImDrawIdx)), (const GLvoid*)cmd_list->IdxBuffer.Data, GL_STREAM_DRAW);
-
-            for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
-            {
-                const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-                if (pcmd->UserCallback)
-                {
-                    pcmd->UserCallback(cmd_list, pcmd);
-                }
-                else
-                {
-                    glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
-                    glScissor((int)pcmd->ClipRect.x, (int)(fb_height - pcmd->ClipRect.w), (int)(pcmd->ClipRect.z - pcmd->ClipRect.x), (int)(pcmd->ClipRect.w - pcmd->ClipRect.y));
-                    glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount, sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, idx_buffer_offset);
-                }
-                idx_buffer_offset += pcmd->ElemCount;
-            }
-        }
-
-        // Restore modified GL state
-        glUseProgram((GLuint)last_program);
-        glBindTexture(GL_TEXTURE_2D, (GLuint)last_texture);
-        glActiveTexture((GLuint)last_active_texture);
-        glBindVertexArray((GLuint)last_vertex_array);
-        glBindBuffer(GL_ARRAY_BUFFER, (GLuint)last_array_buffer);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)last_element_array_buffer);
-        glBlendEquationSeparate((GLuint)last_blend_equation_rgb, (GLuint)last_blend_equation_alpha);
-        glBlendFuncSeparate((GLuint)last_blend_src_rgb, (GLuint)last_blend_dst_rgb, (GLuint)last_blend_src_alpha, (GLuint)last_blend_dst_alpha);
-        if (last_enable_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-        if (last_enable_cull_face) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-        if (last_enable_depth_test) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-        if (last_enable_scissor_test) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
-        glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
-        glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
-
-        
-        SDL_GL_SwapWindow(platformContext->window);
-        CO_ASSERT(glGetError() == GL_NO_ERROR);
+        renderDebugger(gbDebug, platformContext);
         unlockMutex(gbDebug->debuggerMutex);
         
     }
 }
+#endif
 
 static bool
 initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *programState, int mainScreenX, int mainScreenY) {
@@ -570,7 +584,12 @@ initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#ifdef MT_RENDER
     SDL_GL_SetSwapInterval(1);
+#else 
+    SDL_GL_SetSwapInterval(0);
+#endif
+    
     auto window = SDL_CreateWindow("Debugger", mainScreenX + 20, mainScreenY + 20,
                                    DEBUG_WINDOW_MIN_WIDTH, DEBUG_WINDOW_MIN_HEIGHT, 
                                    SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
@@ -721,6 +740,9 @@ initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *
         tile->textureID = (void*)textureID;
         tile->needsUpdate = true;
     }
+    out->gbDebug = gbDebug;
+    SDL_GL_MakeCurrent(out->window, nullptr);
+#ifdef MT_RENDER
     out->isRunning = true;
     if (!gbDebug->debuggerMutex) {
         gbDebug->debuggerMutex = createMutex();
@@ -729,9 +751,10 @@ initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *
         gbDebug->renderCondition = createWaitCondition();
     }
     gbDebug->shouldRender = false;
-    out->gbDebug = gbDebug;
-    SDL_GL_MakeCurrent(out->window, nullptr);
+    
     out->renderThread = startThread(renderDebuggerThread, out);
+#endif
+
     return true;
 }
 
@@ -1958,6 +1981,11 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
             profileStart("Flip to screen", profileState);
             SDL_RenderPresent(renderer);
             profileEnd(profileState);
+#ifndef MT_RENDER
+            if (gbDebug->isEnabled) {
+                renderDebugger(gbDebug, debuggerContext);
+            }
+#endif
         }
 
         //draw notifications and new title
@@ -2225,8 +2253,11 @@ int main(int argc, char **argv) {
         ALERT("Could not create window. Reason %s", SDL_GetError());
         goto exit;
     }
-
+#ifdef MT_RENDER
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC  );
+#else
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+#endif
 
     if (!renderer) {
         ALERT("Could not init renderer. Reason %s", SDL_GetError());

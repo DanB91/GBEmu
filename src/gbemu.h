@@ -5,6 +5,10 @@
 
 #include "common.h"
 
+#ifndef MAC
+# define MT_RENDER //OpenGL mutli-threaded render is broken on macOS Mojave
+#endif
+
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "3rdparty/imgui.h"
 

@@ -88,9 +88,11 @@ struct GameBoyDebug {
     }; 
     Tile tiles[0x200]; 
     
+#ifdef MT_RENDER
     Mutex *debuggerMutex;
     volatile bool shouldRender;
     WaitCondition *renderCondition;
+#endif
     
     //Input
     char inputText[32]; //32 is based on SDL

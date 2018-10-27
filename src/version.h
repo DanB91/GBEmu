@@ -1,1 +1,1 @@
-constexpr char GBEMU_VERSION[] = "0.0.2";
+constexpr char GBEMU_VERSION[] = "0.0.2";  

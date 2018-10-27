@@ -884,7 +884,9 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         gbDebug->wasCPUPaused = false;
     }
 
+#ifdef MT_RENDER
     lockMutex(gbDebug->debuggerMutex);
+#endif
     ImGui::SetCurrentContext((ImGuiContext*)programState->guiContext);
 
     /* ImGui  input code  */
@@ -1811,11 +1813,13 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
 
     ImGui::Render();
     /***************************
-         * Signal to render debugger
-         ***************************/
+     * Signal to render debugger
+     ***************************/
+#ifdef MT_RENDER
     gbDebug->shouldRender = true; 
     broadcastCondition(gbDebug->renderCondition);
     unlockMutex(gbDebug->debuggerMutex);
+#endif
     profileEnd(profileState);
 
     //NOTE: used to test the pop that happens when switching between applications
