@@ -1,5 +1,7 @@
 # GBEmu
 
+![](resources/GBEmuLogo.png)
+
 GBEmu (working title) is a Game Boy Emulator written in a C-style C++ (using some C++11 features like auto) and SDL2 (and a tiny bit of GTK3 on Linux). Some distinctive features include a ROM debugger, a rewind system and easy-to-use quick save and restore slots. Right now it works on Mac, Windows and Linux.  
 
 ## Usage
@@ -54,27 +56,27 @@ The left hand side of the equals is called the **Config Option** and the right h
 
 Right now, there are 2 categories of **Config Options**, options that map controls and an option to set the initial size of GBEmu's window. The option to set the initial size accepts a number (more details about this in the table below). The following table are the supported **Config Options**:
 
-|Config Option|Description             |Example Usage            |
-|-------------|------------------------|---------------------------|
-| `Up`          | Maps Game Boy up button|`Up = Key w, Gamepad Up`|
-| `Down`        | Maps Game Boy down button|`Down = Key s, Gamepad Down`|
-| `Left`        | Maps Game Boy left button|`Left = Key a, Gamepad Left`|
-| `Right`       | Maps Game Boy right button|`Right = Key d, Gamepad Right`|
-| `A`           | Maps Game Boy A button|`A = Key /, Gamepad A`|
-| `B`           | Maps Game Boy B button            |`B = Key ., Gamepad B`|
-| `Start`       | Maps Game Boy Start button        |`Start = Key Enter, Gamepad Start`|
-| `Select`      | Maps Game Boy Select button       |`Select = Key \, Gamepad Back`|
-| `Rewind`      | Maps GBEmu's rewind functionality |`Rewind = Key Left, Gamepad LeftBumper`|
-| `Mute`     | Mutes GBEmu |`Mute = Key Ctrl-m`|
-| `Pause`     | Pauses emulation |`Pause = Key Ctrl-p`|
-| `Reset`     | Reset emulation |`Reset = Key Ctrl-r`|
-| `FullScreen`     | Puts GBEmu in full screen |`FullScreen = Key Ctrl-f`|
-| `ShowHomePath`     | Flashes the **GBEmu Home Directory** on the title bar |`ShowHomePath = Key Ctrl-h`|
-| `ShowControls`     | Show all of the key and gamepad mappings in a pop up |`ShowControls = Key Ctrl-n`|
-| `ShowDebugger`     | Brings up the ROM debugger |`ShowDebugger = Key Ctrl-b`|
-| `DebuggerStep`     | Steps an instruction in the debugger |`DebuggerStep = Key n`|
-| `DebuggerContinue`     | Continues to next breakpoint in debugger|`DebuggerContinue = Key c`|
-| `ScreenScale`     | Determines how many times larger, in resolution, the GBEmu window is to an actual Game Boy screen, which is 160x144. |`ScreenScale = 4`|
+| Config Option      | Description                                                                                                          | Example Usage                           |
+|:-------------------|:---------------------------------------------------------------------------------------------------------------------|:----------------------------------------|
+| `Up`               | Maps Game Boy up button                                                                                              | `Up = Key w, Gamepad Up`                |
+| `Down`             | Maps Game Boy down button                                                                                            | `Down = Key s, Gamepad Down`            |
+| `Left`             | Maps Game Boy left button                                                                                            | `Left = Key a, Gamepad Left`            |
+| `Right`            | Maps Game Boy right button                                                                                           | `Right = Key d, Gamepad Right`          |
+| `A`                | Maps Game Boy A button                                                                                               | `A = Key /, Gamepad A`                  |
+| `B`                | Maps Game Boy B button                                                                                               | `B = Key ., Gamepad B`                  |
+| `Start`            | Maps Game Boy Start button                                                                                           | `Start = Key Enter, Gamepad Start`      |
+| `Select`           | Maps Game Boy Select button                                                                                          | `Select = Key \, Gamepad Back`          |
+| `Rewind`           | Maps GBEmu's rewind functionality                                                                                    | `Rewind = Key Left, Gamepad LeftBumper` |
+| `Mute`             | Mutes GBEmu                                                                                                          | `Mute = Key Ctrl-m`                     |
+| `Pause`            | Pauses emulation                                                                                                     | `Pause = Key Ctrl-p`                    |
+| `Reset`            | Reset emulation                                                                                                      | `Reset = Key Ctrl-r`                    |
+| `FullScreen`       | Puts GBEmu in full screen                                                                                            | `FullScreen = Key Ctrl-f`               |
+| `ShowHomePath`     | Flashes the **GBEmu Home Directory** on the title bar                                                                | `ShowHomePath = Key Ctrl-h`             |
+| `ShowControls`     | Show all of the key and gamepad mappings in a pop up                                                                 | `ShowControls = Key Ctrl-n`             |
+| `ShowDebugger`     | Brings up the ROM debugger                                                                                           | `ShowDebugger = Key Ctrl-b`             |
+| `DebuggerStep`     | Steps an instruction in the debugger                                                                                 | `DebuggerStep = Key n`                  |
+| `DebuggerContinue` | Continues to next breakpoint in debugger                                                                             | `DebuggerContinue = Key c`              |
+| `ScreenScale`      | Determines how many times larger, in resolution, the GBEmu window is to an actual Game Boy screen, which is 160x144. | `ScreenScale = 4`                       |
 
 The option that maps controls accept 2 types of **Config Values**:
  1. Key -- Represents a key on the keyboard. For example, `Key w` means the w key on the keyboard. International keys (e.g `ä` are supported). English letters are case insensitive. So `Key W` is the same as `Key w`, but not `Key Ä` is **NOT** the same as `Key ä`. In the case of non-English characters, the lower case version should always be used. Non-English keys are only the part of **config.txt** that is case sensitive. Number keys are NOT supported and are reserved for usage with the save state controls.
@@ -84,40 +86,39 @@ The option that maps controls accept 2 types of **Config Values**:
  The following **Config Values** are supported for key mappings:
 
 
-
- |Config Value|Meaning    |
- |------------|-----------|
- |  `Key [single character key]` | References a letter or symbol on the keyboard. E.g. `Key a` or `Key /` |
-| `Key Enter`  | Enter key (Return key on Mac)  |   
-|  `Key Backspace` | Backspace key  |   
-|  `Key Tab` | Tab key  |   
-|  `Key Spacebar` | Spacebar key  |   
-|  `Key Up` | Up arrow key  |   
-|  `Key Down` | Down arrow key  |   
-|  `Key Left` | Left arrow key  |   
-|  `Key Right` | Right arrow key  |   
- |  `Key Ctrl-[any key config value]` | Use the Ctrl key (Command on Mac) with a key E.g. `Key Ctrl-a` or `Key Ctrl-Enter` |
- |  `Key Command-[any key config value]` | Same as above. E.g. `Key Command-a` or `Key Command-Enter` |
+| Config Value                         | Meaning                                                                            |
+|:-------------------------------------|:-----------------------------------------------------------------------------------|
+| `Key [single character key]`         | References a letter or symbol on the keyboard. E.g. `Key a` or `Key /`             |
+| `Key Enter`                          | Enter key (Return key on Mac)                                                      |
+| `Key Backspace`                      | Backspace key                                                                      |
+| `Key Tab`                            | Tab key                                                                            |
+| `Key Spacebar`                       | Spacebar key                                                                       |
+| `Key Up`                             | Up arrow key                                                                       |
+| `Key Down`                           | Down arrow key                                                                     |
+| `Key Left`                           | Left arrow key                                                                     |
+| `Key Right`                          | Right arrow key                                                                    |
+| `Key Ctrl-[any key config value]`    | Use the Ctrl key (Command on Mac) with a key E.g. `Key Ctrl-a` or `Key Ctrl-Enter` |
+| `Key Command-[any key config value]` | Same as above. E.g. `Key Command-a` or `Key Command-Enter`                         |
 
  The following **Config Values** are supported for gamepad mappings (all are case insensitive):
 
-|Config Value|Meaning    |
-|------------|-----------|
-|`Gamepad Up`|Up on D-Pad and Left Analog Stick|
-|`Gamepad Down`|Down on D-Pad and Left Analog Stick|
-|`Gamepad Left`|Left on D-Pad and Left Analog Stick|
-|`Gamepad Right`|Right on D-Pad and Left Analog Stick|
-|`Gamepad A`|A Button|
-|`Gamepad B`|B Button|
-| `Gamepad X` | X Button  |
-| `Gamepad Y` | Y Button  |
-| `Gamepad Start` | Start Button  |
-| `Gamepad Back` | Back Button  |
-| `Gamepad Guide` | Guide (a.k.a Home) Button  |
-| `Gamepad LeftBumper` | Left Bumper (LB) Button  |
-| `Gamepad RightBumper` | Right Bumper (RB) Button  |
-| `Gamepad LeftTrigger` | Left Trigger (LT)  |
-| `Gamepad RightTrigger` | Right Trigger (RT)  |
+| Config Value           | Meaning                              |
+|:-----------------------|:-------------------------------------|
+| `Gamepad Up`           | Up on D-Pad and Left Analog Stick    |
+| `Gamepad Down`         | Down on D-Pad and Left Analog Stick  |
+| `Gamepad Left`         | Left on D-Pad and Left Analog Stick  |
+| `Gamepad Right`        | Right on D-Pad and Left Analog Stick |
+| `Gamepad A`            | A Button                             |
+| `Gamepad B`            | B Button                             |
+| `Gamepad X`            | X Button                             |
+| `Gamepad Y`            | Y Button                             |
+| `Gamepad Start`        | Start Button                         |
+| `Gamepad Back`         | Back Button                          |
+| `Gamepad Guide`        | Guide (a.k.a Home) Button            |
+| `Gamepad LeftBumper`   | Left Bumper (LB) Button              |
+| `Gamepad RightBumper`  | Right Bumper (RB) Button             |
+| `Gamepad LeftTrigger`  | Left Trigger (LT)                    |
+| `Gamepad RightTrigger` | Right Trigger (RT)                   |
 
 
 Anything that begins with a `//` is comment and is ignored by GBEmu.  Example:
