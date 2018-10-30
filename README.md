@@ -199,8 +199,8 @@ A copy of SDL2 is included for all supported platforms, so no need to manually i
 
 ### Mac
 - Requirements:
-	* clang  -- Tested on clang 9.
-	- Tested on MacOS High Sierra.
+	* clang  -- Tested on clang 9 and 10.
+	- Tested on macOS Mojave.
 - To compile:
  1. Go to the source directory in the Terminal.
  2. Run `cd mac`
@@ -221,7 +221,7 @@ A copy of SDL2 is included for all supported platforms, so no need to manually i
  2. Go to the source directory in the Terminal.
  3. Run `cd linux`
  4. Run `./build.sh`
-   - You can run `./build.sh help`for a list of options.
+   - You can run `./build.sh help` for a list of options.
  5. The executable is located in the build directory
 
 ### Windows
@@ -232,4 +232,8 @@ A copy of SDL2 is included for all supported platforms, so no need to manually i
 	1. Go to the source directory in the CMD.
 	2. Run `cd windows`
 	3. Run `build`
+   - You can run `build help` for a list of options.
 	4. The executable is located in the build directory.
+
+## Contact and Screenshots
+This project is currently hosted on [GitHub](https://github.com/DanB91/GBEmu) and [Handmade Network](https://gbemu.handmade.network/).  I host the latest screenshots on my Handmade Network project page. If you have any comments or questions, feel free to post on the forums on Handmade Network or reach out to me directly at dan.bokser at gmail dot com or shoot me DM on Twitter at dbokser91.

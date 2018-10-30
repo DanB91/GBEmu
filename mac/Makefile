@@ -12,7 +12,7 @@ PLATFORM_OBJ += build/imgui.o
 
 VERSION=$(shell cat ../version.txt)
 
-CPPFLAGS=-g -fno-exceptions -Wall -Wextra  -std=c++11  -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -I/Library/Frameworks/SDL2.framework/Headers
+CPPFLAGS=-g -mmacosx-version-min=10.13 -fno-exceptions -Wall -Wextra  -std=c++11  -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -I/Library/Frameworks/SDL2.framework/Headers
 CC=clang++
 
 CTIME = ./ctime_mac
