@@ -12,12 +12,14 @@
         <string>6.0</string>
         <key>CFBundleName</key>
         <string>GBEmu</string>
+        <key>CFBundleIconFile</key>
+        <string>GBEmuIcon.icns</string>
         <key>CFBundlePackageType</key>
         <string>APPL</string>
         <key>LSMinimumSystemVersion</key>
         <string>10.13</string>
         <key>CFBundleShortVersionString</key>
-        <string>1.0</string>
+        <string>@GBEmuVersion@</string>
         <key>CFBundleVersion</key>
         <string>1</string>
     </dict>

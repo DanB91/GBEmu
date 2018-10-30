@@ -1,11 +1,14 @@
 Bugs/Optimization:
+    - Swap old and new input pointers instead of copying (Profile first)
+    - Resizable window
+    
+    - tie .gb and .gbc files to app
+    
+    - Fix bugs for gameboy demo (let instruction execute on interrupt boundary?)
+    
     - Look into how games use the RTC other than Pokemon
     
-    - Restructure MBCs into function pointers
-    
     - Optimize sound
-    
-    - Test on international keyboards
     
     - Optimize drawScanLine
         
@@ -28,6 +31,7 @@ Bugs/Optimization:
 
 Testing:
     - Check behavior if disk runs out of space.
+    - Test on international keyboards
 
 Code Style:
     - Nail down a consistancy of integer types
@@ -52,6 +56,19 @@ Features:
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 Bug Notes:
 
+-Debug pocket.gb demo
+    - Gray screen after eye demo
+    - Looks like address 0x27BF we are checking ly is never 144 as expected. It is 145, 147 or 149.  looks like the VBlank handler takes a variable number of scanlines
+        to complete.  
+    - This implies timings might be incorrect with lcd
+    - 144 needs to be loaded into register A at 27BC.  It looks like that the VBlank interrupt before A can get 144.
+    - When breaking at 27B8 and continuing until A and B are both 144, we see ly is 148 on both BGB and GBEmu
+        - GBEmu mode clock for lcd is at 88.  It'd helpful to see what it is on BGB
+    - When A is 144 and B is 144, the next VBlank interrupt occurs right before the LD A, ($FF00+$44) instruction.
+        - If the VBlank interrupt was executed after this instruction, we'd be good
+            -Tested it out and it works when the VBlank interrupt is delayed after the instruction executes
+        - Should it be this way?
+
 - Debug 2048
     - Caused when uncommenting the ScanVRAMAndOAM lockout code.
     - Its tryring to write a value at 9A08 but the LCD is in ScanVRAMAndOAM mode. LCD timings might be off
@@ -60,7 +77,7 @@ Bug Notes:
     - Its supposed to be mode ScanOAM (mode 2).
     - Sticking in a NOP before waithblank fixes the problem. This implies something is taking 4 cycles less time than it should before hblank
     
-- Debug Pokemon Pinball
+- Debug Pokemon Pinball (FIXED)
     In FieldVerticalTransition: ; 0x6674:
            call ToggleAudioEngineUpdateMethod
            call DisableLCD  <---- This never returns.  Figure out why. 
@@ -93,3 +110,4 @@ The thing is, we are in VBlank!!
 THe solution:
 
     Compared it to BGB: rLY (FF44) is supposed to be 0 when lcd is disabled.  Once I put the fix in, it started working!
+    

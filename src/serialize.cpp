@@ -452,7 +452,7 @@ struct SerializingState {
         timestampFileName(romName, "gbes.backup", backupPath);
         
         char *saveStateFileName = nullptr; 
-        buf_printf(saveStateFileName, "%s_%d.gbes", romName, saveSlot);
+        buf_gen_memory_printf(saveStateFileName, "%s_%d.gbes", romName, saveSlot);
         
         auto copyFileRes = copyFile(saveStateFileName, backupPath, &programState->fileMemory);
         switch (copyFileRes) {
@@ -470,7 +470,7 @@ struct SerializingState {
             CO_ERR("Could not save game state. Could not open file.");
             return FileSystemResultCode::NotFound;
         }
-        buf_free(saveStateFileName);
+        buf_gen_memory_free(saveStateFileName);
         SerializingState ss;
         ss.f = f;
         ss.isWriting = true;
@@ -537,13 +537,13 @@ exit:
         MMU backupMMU = *mmu;
         
         char *saveStateFileName = nullptr; 
-        buf_printf(saveStateFileName, "%s_%d.gbes", romName, saveSlot);
+        buf_gen_memory_printf(saveStateFileName, "%s_%d.gbes", romName, saveSlot);
         
         FILE *f = fopen(saveStateFileName, "rb");
         if (!f) {
             return RestoreSaveResult::NothingInSlot;
         }
-        buf_free(saveStateFileName);
+        buf_gen_memory_free(saveStateFileName);
 
         SerializingState ss;
         ss.f = f;

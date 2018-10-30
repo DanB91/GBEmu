@@ -1,0 +1,13 @@
+
+//fdaf =fdafd
+//fdasfa#fjdai = fdaijfdai
+//ifjda=kjfdai
+
+a = key /   
+b = key .
+
+start = controller start, key #, key enter
+
+pause = key command-p
+
+screenscale = 4

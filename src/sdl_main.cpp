@@ -1,19 +1,27 @@
 //Copyright (C) 2018 Daniel Bokser.  See LICENSE.txt for license
 
+#include "version.h"
 #include "3rdparty/GL/gl3w.h"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <SDL2/SDL_opengl_glext.h>
 
-
 //unity
+
 #define CO_IMPL
+#include "common.h"
 
+#define GB_IMPL
+#ifdef CO_DEBUG
+#   include "gbemu.h"
+#else
+#   include "gbemu.cpp"
+#endif
 
-#include "gbemu.h"
 #include "debugger.h"
 #include "3rdparty/gl3w.c"
+#include "config.cpp"
 
 #ifdef WINDOWS
 #include <io.h>
@@ -22,20 +30,18 @@
 #define access(a1,a2) _access(a1,a2)
 #endif
 
-#define RUN_BOOT_SCREEN_FLAG "-b"
+#define RUN_BOOT_SCREEN_FLAG "-b" //unused for now
 #define DEBUG_ON_BOOT_FLAG "-d"
 
 #define DEFAULT_GBEMU_HOME_PATH "gbemu_home"
 #define HOME_PATH_ENV_VARIABLE "GBEMU_HOME"
 #define HOME_PATH_CONFIG_FILE "gbemu_home_path.txt"
 
-//TODO:
-#define GBEMU_CONFIG "config.txt"
+#define GBEMU_CONFIG_FILENAME "config.txt"
+#define GBEMU_CONFIG_FILE_PATH (".." FILE_SEPARATOR GBEMU_CONFIG_FILENAME)
 
 #define CART_RAM_FILE_EXTENSION "sav"
 #define RTC_FILE_LEN 48
-#define WINDOW_WIDTH (SCREEN_WIDTH * SCREEN_SCALE)
-#define WINDOW_HEIGHT (SCREEN_HEIGHT * SCREEN_SCALE)
 
 
 #define SECONDS_PER_FRAME (1.f/60)
@@ -53,27 +59,131 @@
 #   define CTRL_KEY KMOD_CTRL
 #endif
 
+    
 #define ANALOG_STICK_DEADZONE 8000
+#define ANALOG_TRIGGER_DEADZONE 8000
+    
+#ifdef MAC 
+#   define CTRL "Command-"
+#else
+#   define CTRL "Ctrl-"
+#endif
 
-#define ALERT(fmt, ...)  do {\
-    char *msg = nullptr;\
-    buf_printf(msg, fmt, ##__VA_ARGS__);\
-    CO_ERR(fmt, ##__VA_ARGS__);\
-    alertDialog(msg);\
-    buf_free(msg);\
-}while(0)
+static const char *resultCodeToString[] = {
+    [(int)FileSystemResultCode::OK] =  "",
+    [(int)FileSystemResultCode::PermissionDenied] = "Permission denied",
+    [(int)FileSystemResultCode::OutOfSpace] = "Out of disk space",
+    [(int)FileSystemResultCode::OutOfMemory] = "Out of memory",
+    [(int)FileSystemResultCode::AlreadyExists] = "File already exists",
+    [(int)FileSystemResultCode::IOError] = "Error reading or writing to disk",
+    [(int)FileSystemResultCode::NotFound] = "File not found",
+    [(int)FileSystemResultCode::Unknown] = "Unknown error"
+};
+
+static const char *movementKeyMappingToString[] = {
+  [(int)MovementKeyMappingValue::Backspace] = "Backspace", 
+  [(int)MovementKeyMappingValue::Enter] = "Enter", 
+  [(int)MovementKeyMappingValue::Down] = "Down Arrow", 
+  [(int)MovementKeyMappingValue::Up] = "Up Arrow", 
+  [(int)MovementKeyMappingValue::Left] = "Left Arrow", 
+  [(int)MovementKeyMappingValue::Right] = "Right Arrow", 
+  [(int)MovementKeyMappingValue::SpaceBar] = "Space Bar", 
+  [(int)MovementKeyMappingValue::Tab] = "Tab", 
+};
+
+static const SDL_Keycode movementKeyMappingToSDLKeyCode[] = {
+  [(int)MovementKeyMappingValue::Backspace] = SDLK_BACKSPACE, 
+  [(int)MovementKeyMappingValue::Enter] = SDLK_RETURN, 
+  [(int)MovementKeyMappingValue::Down] = SDLK_DOWN, 
+  [(int)MovementKeyMappingValue::Up] = SDLK_UP, 
+  [(int)MovementKeyMappingValue::Left] = SDLK_LEFT, 
+  [(int)MovementKeyMappingValue::Right] = SDLK_RIGHT, 
+  [(int)MovementKeyMappingValue::SpaceBar] = SDLK_SPACE, 
+  [(int)MovementKeyMappingValue::Tab] = SDLK_TAB, 
+};
+
+static const int gamepadMappingToSDLButton[] = {
+  [(int)GamepadMappingValue::A] = SDL_CONTROLLER_BUTTON_A,  
+  [(int)GamepadMappingValue::B] = SDL_CONTROLLER_BUTTON_B,  
+  [(int)GamepadMappingValue::X] = SDL_CONTROLLER_BUTTON_X,  
+  [(int)GamepadMappingValue::Y] = SDL_CONTROLLER_BUTTON_Y,  
+    
+  [(int)GamepadMappingValue::Up] = SDL_CONTROLLER_BUTTON_DPAD_UP,  
+  [(int)GamepadMappingValue::Down] = SDL_CONTROLLER_BUTTON_DPAD_DOWN,  
+  [(int)GamepadMappingValue::Left] = SDL_CONTROLLER_BUTTON_DPAD_LEFT,  
+  [(int)GamepadMappingValue::Right] = SDL_CONTROLLER_BUTTON_DPAD_RIGHT,  
+  
+  [(int)GamepadMappingValue::LeftBumper] = SDL_CONTROLLER_BUTTON_LEFTSHOULDER,  
+  [(int)GamepadMappingValue::RightBumper] = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,  
+    
+  [(int)GamepadMappingValue::Start] = SDL_CONTROLLER_BUTTON_START,  
+  [(int)GamepadMappingValue::Back] = SDL_CONTROLLER_BUTTON_BACK,  
+    
+  [(int)GamepadMappingValue::Guide] = SDL_CONTROLLER_BUTTON_GUIDE,  
+    
+//using negative numbers as to not conflict with SDL codes
+  [(int)GamepadMappingValue::LeftTrigger] = NO_INPUT_MAPPING - 1,
+  [(int)GamepadMappingValue::RightTrigger] = NO_INPUT_MAPPING - 2,
+};
+static const char *gamepadMappingToString[] = {
+  [(int)GamepadMappingValue::A] = "A Button",  
+  [(int)GamepadMappingValue::B] = "B Button",  
+  [(int)GamepadMappingValue::X] = "X Button",  
+  [(int)GamepadMappingValue::Y] = "Y Button",  
+    
+  [(int)GamepadMappingValue::Up] = "D-Pad Up",  
+  [(int)GamepadMappingValue::Down] = "D-Pad Down",  
+  [(int)GamepadMappingValue::Left] = "D-Pad Left",  
+  [(int)GamepadMappingValue::Right] = "D-Pad Right",  
+  
+  [(int)GamepadMappingValue::LeftBumper] = "Left Bumper",  
+  [(int)GamepadMappingValue::RightBumper] = "Right Bumper",  
+    
+  [(int)GamepadMappingValue::Start] = "Start Button",  
+  [(int)GamepadMappingValue::Back] = "Back Button",  
+    
+  [(int)GamepadMappingValue::Guide] = "Guide Button",  
+    
+  [(int)GamepadMappingValue::LeftTrigger] = "Left Trigger",  
+  [(int)GamepadMappingValue::RightTrigger] = "Right Trigger",  
+};
+
+static const char *actionToString[(int)Input::Action::NumActions] = {
+    [(int)Input::Action::A] = "Game Boy Button A", 
+    [(int)Input::Action::B] = "Game Boy Button B", 
+    [(int)Input::Action::Start] = "Game Boy Button Start", 
+    [(int)Input::Action::Select] = "Game Boy Button Select", 
+    [(int)Input::Action::Up] = "Game Boy D-Pad Up",  
+    [(int)Input::Action::Down] = "Game Boy D-Pad Down",  
+    [(int)Input::Action::Left] = "Game Boy D-Pad Left",  
+    [(int)Input::Action::Right] = "Game Boy D-Pad Right",  
+    [(int)Input::Action::Rewind] = "Emulator Rewind",  
+    [(int)Input::Action::DebuggerContinue] = "Debugger Continue",  
+    [(int)Input::Action::DebuggerStep] = "Debugger Step",  
+    [(int)Input::Action::ShowHomePath] = "Show GBEmu Home Path",  
+    [(int)Input::Action::Mute] = "Mute Sound",
+    [(int)Input::Action::Pause] = "Pause Emulator",
+    [(int)Input::Action::Reset] = "Reset Emulator",  
+    [(int)Input::Action::ShowDebugger] = "Show Debugger",  
+    [(int)Input::Action::FullScreen] = "Make Full Screen",  
+    [(int)Input::Action::ShowControls] = "Show This Message"  
+};
+
 bool openFileDialogAtPath(const char *path, char *outPath);
 bool openDirectoryAtPath(const char *path, char *outPath);
 
+void alertDialogSDL(const char *message) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", message, nullptr);
+}
 #ifdef CO_DEBUG
-typedef void FnRunFrame(CPU *, MMU *, GameBoyDebug *, ProgramState *, TimeUS dt);
-typedef void FnReset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState);
-typedef void FnSetMemoryContext(MemoryContext *mc);
+typedef void RunFrameFn(CPU *, MMU *, GameBoyDebug *, ProgramState *, TimeUS);
+typedef void ResetFn(CPU *cpu, MMU *, GameBoyDebug *, ProgramState *);
+typedef void SetPlatformContextFn(MemoryContext *, AlertDialogFn *);
 struct GBEmuCode {
     void *handle;
-    FnRunFrame *runFrame;
-    FnReset *reset;
-    FnSetMemoryContext *setMemoryContext;
+    RunFrameFn *runFrame;
+    ResetFn *reset;
+    SetPlatformContextFn *setPlatformContext;
     time_t timeLastModified;
 };
 
@@ -83,21 +193,21 @@ GBEmuCode loadGBEmuCode(const char *gbemuCodePath) {
     ret.handle = SDL_LoadObject(gbemuCodePath);
     CO_ASSERT_MSG(ret.handle, "Error opening shared obj: %s", SDL_GetError());
 
-    ret.runFrame = (FnRunFrame*) SDL_LoadFunction(ret.handle, "runFrame");
+    ret.runFrame = (RunFrameFn*) SDL_LoadFunction(ret.handle, "runFrame");
     CO_ASSERT(ret.runFrame);
 
-    ret.reset = (FnReset*) SDL_LoadFunction(ret.handle, "reset");
+    ret.reset = (ResetFn*) SDL_LoadFunction(ret.handle, "reset");
     CO_ASSERT(ret.runFrame);
     
-    ret.setMemoryContext = (FnSetMemoryContext*) SDL_LoadFunction(ret.handle, "setMemoryContext");
-    CO_ASSERT(ret.setMemoryContext);
+    ret.setPlatformContext = (SetPlatformContextFn*) SDL_LoadFunction(ret.handle, "setPlatformContext");
+    CO_ASSERT(ret.setPlatformContext);
 
     struct stat fileStats;
     stat(gbemuCodePath, &fileStats);
 
     ret.timeLastModified = fileStats.st_mtime;
     
-    ret.setMemoryContext(getMemoryContext());
+    ret.setPlatformContext(getMemoryContext(), alertDialogSDL);
 
     return ret;
 }
@@ -117,18 +227,16 @@ struct DebuggerPlatformContext {
     GLint attribLocationTex;
     GLuint vboID, vaoID, elementsID;
     GLuint fontTexture;
-
+    GameBoyDebug *gbDebug;
+#ifdef MT_RENDER
     //render thread data
     Thread *renderThread;
     volatile bool isRunning;
-    GameBoyDebug *gbDebug;
+#endif
     
 };
 
 
-static void alertDialog(const char *message) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", message, nullptr);
-}
 enum class HomeDirectoryOption {
     DEFAULT = 0,
     CUSTOM,
@@ -163,7 +271,7 @@ static HomeDirectoryOption showHomeDirectoryDialog(const char *defaultHomeDirPat
     data.numbuttons = 3;
     char *message = nullptr;
     
-    buf_printf(message, "GBEmu has no home directory set. This is a required directory that will be used for storage of ROMs, save states, and other files.\n"
+    buf_gen_memory_printf(message, "GBEmu has no home directory set. This is a required directory that will be used for storage of ROMs, save states, and other files.\n"
         "To set the GBEmu home directory, you have 3 options:\n"
         "\n"
 		"1) 'Default': Use and, if needed, create the default GBEmu home directory at %s.\n"
@@ -177,161 +285,113 @@ static HomeDirectoryOption showHomeDirectoryDialog(const char *defaultHomeDirPat
     
     int pressedButton = -1;
     bool success = SDL_ShowMessageBox(&data, &pressedButton) == 0;
-    buf_free(message);
+    buf_gen_memory_free(message);
     
     return (success && pressedButton != -1) ? (HomeDirectoryOption)pressedButton : HomeDirectoryOption::EXIT;
 }
 
-static void processKey(SDL_Scancode key, bool isDown, bool isCtrlDown, Input::State *input) {
+static void processKeyUp(SDL_Keycode key, Input::State *input, 
+                       Input::CodeToActionMap *keysMap, Input::CodeToActionMap *ctrlKeysMap) {
+   
+    profileStart("process key up", profileState);
+    Input::Action action;
+    if (retrieveActionForInputCode(key, &action, ctrlKeysMap)) {
+        input->actionsHit[(int)action] = false; 
+    }
+    if (retrieveActionForInputCode(key, &action, keysMap)) {
+        input->actionsHit[(int)action] = false; 
+    }
+
     switch (key) {
-    case SDL_SCANCODE_W: {
-        input->up = isDown;
+    case SDLK_0: 
+    case SDLK_1:   
+    case SDLK_2:   
+    case SDLK_3:   
+    case SDLK_4:   
+    case SDLK_5:   
+    case SDLK_6:   
+    case SDLK_7:   
+    case SDLK_8:   
+    case SDLK_9: {
+        input->slotToRestoreOrSave = (key == SDLK_0) ? 0 : (key - SDLK_1 + 1);
+        input->saveState = false;
+        input->restoreState = false;
     } break;
-    case SDL_SCANCODE_S: {
-        input->down = isDown;
+    case SDLK_ESCAPE: {
+        input->escapeFullScreen = false;
     } break;
-    case SDL_SCANCODE_A: {
-        input->left = isDown;
+    case SDLK_KP_ENTER:
+    case SDLK_RETURN: {
+       input->enterPressed = false; 
     } break;
-    case SDL_SCANCODE_D: {
-        input->right = isDown;
-    } break;
-
-    case SDL_SCANCODE_PERIOD: {
-        input->b = isDown;
-    } break;
-
-    case SDL_SCANCODE_SLASH: {
-        input->a = isDown;
-    } break;
-
-    case SDL_SCANCODE_RETURN: {
-        input->start = isDown;
-    } break;
-
-    case SDL_SCANCODE_BACKSLASH: {
-        input->select = isDown;
-    } break;
-
-    case SDL_SCANCODE_N: {
-        input->nextStep = isDown;
-    } break;
-        
-    case SDL_SCANCODE_C: {
-        input->debugContinue = isDown;
-    } break;
-        
-    case SDL_SCANCODE_H: {
-        input->showHomeDirectory = isDown;
-    } break;
-
-    case SDL_SCANCODE_R: {
-        if (isCtrlDown) {
-            input->reset = isDown;
-        }
-    } break;
-
-    case SDL_SCANCODE_B: {
-        input->debugOn = isDown;
-    } break;
-
-    case SDL_SCANCODE_P: {
-        input->pause = isDown;
-    } break;
-
-    case SDL_SCANCODE_M: {
-        input->mute = isDown;
-    } break;
-        
-    case SDL_SCANCODE_F: {
-        if (isCtrlDown) {
-            input->toggleFullScreen = isDown;
-        }
-        else {
-            input->toggleFullScreen = false;
-        }
-    } break;
-    case SDL_SCANCODE_ESCAPE: {
-        input->escapeFullScreen = isDown;
-    } break;
-        
-    case SDL_SCANCODE_0: 
-    case SDL_SCANCODE_1:   
-    case SDL_SCANCODE_2:   
-    case SDL_SCANCODE_3:   
-    case SDL_SCANCODE_4:   
-    case SDL_SCANCODE_5:   
-    case SDL_SCANCODE_6:   
-    case SDL_SCANCODE_7:   
-    case SDL_SCANCODE_8:   
-    case SDL_SCANCODE_9: {
-        input->slotToRestoreOrSave = (key == SDL_SCANCODE_0) ? 0 : (key - SDL_SCANCODE_1 + 1);
-        if (isCtrlDown) {
-            input->saveState = isDown;
-        }
-        else {
-            input->restoreState = isDown;
-        }
-               
-    } break;
-        
-    case SDL_SCANCODE_LEFT:  {
-        input->rewindState = isDown;
-    } break;
-        
     default:
         //do nothing
         break;
     }
+    profileEnd(profileState);
 }
+static void processKeyDown(SDL_Keycode key,  bool isCtrlDown, Input::State *input, 
+                       Input::CodeToActionMap *keysMap, Input::CodeToActionMap *ctrlKeysMap) {
+   
+    profileStart("process key", profileState);
+    //TODO: don't test for ctrl down if lifting up
+    if (isCtrlDown) {
+        Input::Action action;
+        if (retrieveActionForInputCode(key, &action, ctrlKeysMap)) {
+            input->actionsHit[(int)action] = true; 
+        }
+    }
+    else {
+        Input::Action action;
+        if (retrieveActionForInputCode(key, &action, keysMap)) {
+            input->actionsHit[(int)action] = true; 
+        }
+    }
 
-
-static void processButton(SDL_GameControllerButton button, bool isDown, Input::State *input) {
-    switch (button) {
-    case SDL_CONTROLLER_BUTTON_A: {
-        input->a = isDown;
+    switch (key) {
+    case SDLK_0: 
+    case SDLK_1:   
+    case SDLK_2:   
+    case SDLK_3:   
+    case SDLK_4:   
+    case SDLK_5:   
+    case SDLK_6:   
+    case SDLK_7:   
+    case SDLK_8:   
+    case SDLK_9: {
+        input->slotToRestoreOrSave = (key == SDLK_0) ? 0 : (key - SDLK_1 + 1);
+        if (isCtrlDown) {
+            input->saveState = true;
+        }
+        else {
+            input->restoreState = true;
+        }
     } break;
-
-    case SDL_CONTROLLER_BUTTON_B: {
-        input->b = isDown;
+    case SDLK_ESCAPE: {
+        input->escapeFullScreen = true;
     } break;
-
-    case SDL_CONTROLLER_BUTTON_DPAD_UP: {
-        input->up = isDown;
+    case SDLK_KP_ENTER:
+    case SDLK_RETURN: {
+       input->enterPressed = true; 
     } break;
-
-    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: {
-        input->down = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: {
-        input->left = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: {
-        input->right = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_START: {
-        input->start = isDown;
-    } break;
-
-    case SDL_CONTROLLER_BUTTON_BACK: {
-        input->select = isDown;
-    } break;
-        
-    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: {
-       input->rewindState = isDown; 
-    } break;
-
     default:
         //do nothing
         break;
+    }
+    profileEnd(profileState);
+}
+
+
+static void processButton(int button, bool isDown, Input::State *input, Input::CodeToActionMap *gamepadMap) {
+    Input::Action action;
+    if (retrieveActionForInputCode(button, &action, gamepadMap)) {
+        input->actionsHit[(int)action] = isDown; 
     }
 }
 
 static void
 closeDebugger(DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug) {
+#ifdef MT_RENDER
     if (!debuggerContext->isRunning) {
         return;
     }
@@ -341,6 +401,11 @@ closeDebugger(DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug) {
         broadcastCondition(gbDebug->renderCondition);
     }
     waitForAndFreeThread(debuggerContext->renderThread);
+#else
+    if (!gbDebug || !gbDebug->isEnabled) {
+        return;
+    }
+#endif
     ImGui::DestroyContext();
 
     if (debuggerContext->glContext) {
@@ -357,6 +422,143 @@ closeDebugger(DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug) {
 
 }
 
+static void renderDebugger(GameBoyDebug *gbDebug, DebuggerPlatformContext *platformContext) {
+
+    SDL_GL_MakeCurrent(platformContext->window, platformContext->glContext);
+    glClearColor(1.0f, 0, 0, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    foriarr (gbDebug->tiles) {
+        auto tile = gbDebug->tiles[i];
+
+        //TODO: might have to do this update out of this thread
+        if (tile.needsUpdate) {
+            u32 pixels[TILE_HEIGHT * DEFAULT_SCREEN_SCALE * TILE_WIDTH * DEFAULT_SCREEN_SCALE];
+            for (i64 y = 0; y < TILE_HEIGHT * DEFAULT_SCREEN_SCALE; y+=DEFAULT_SCREEN_SCALE) {
+                for (i64 x = 0; x < TILE_WIDTH * DEFAULT_SCREEN_SCALE; x+=DEFAULT_SCREEN_SCALE) {
+                    u32 pixel;
+                    switch ((PaletteColor)tile.pixels[(y/DEFAULT_SCREEN_SCALE)*TILE_WIDTH + (x/DEFAULT_SCREEN_SCALE)]) {
+                    case PaletteColor::White: pixel = 0xFFFFFFFF; break;
+                    case PaletteColor::LightGray: pixel = 0xFFAAAAAA; break;
+                    case PaletteColor::DarkGray: pixel = 0xFF555555; break;
+                    case PaletteColor::Black: pixel = 0xFF000000; break;
+                    }
+
+                    for (i64 y2 = 0; y2 < DEFAULT_SCREEN_SCALE; y2++) {
+                        for (i64 x2 = 0; x2 < DEFAULT_SCREEN_SCALE; x2++) {
+                            pixels[((y+y2)*TILE_WIDTH*DEFAULT_SCREEN_SCALE) + (x + x2)] = pixel;
+                        }
+                    }
+
+                }
+            }
+            glBindTexture(GL_TEXTURE_2D, (GLuint)(u64)tile.textureID);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+            tile.needsUpdate = false;
+        }
+    }
+
+    auto drawData = ImGui::GetDrawData();
+    // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
+    ImGuiIO& io = ImGui::GetIO();
+    int fb_width = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
+    int fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
+    CO_ASSERT(fb_width != 0 && fb_height != 0);
+    drawData->ScaleClipRects(io.DisplayFramebufferScale);
+
+    // Backup GL state
+    GLint last_active_texture; glGetIntegerv(GL_ACTIVE_TEXTURE, &last_active_texture);
+    glActiveTexture(GL_TEXTURE0);
+    GLint last_program; glGetIntegerv(GL_CURRENT_PROGRAM, &last_program);
+    GLint last_texture; glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
+    GLint last_array_buffer; glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_array_buffer);
+    GLint last_element_array_buffer; glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &last_element_array_buffer);
+    GLint last_vertex_array; glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &last_vertex_array);
+    GLint last_blend_src_rgb; glGetIntegerv(GL_BLEND_SRC_RGB, &last_blend_src_rgb);
+    GLint last_blend_dst_rgb; glGetIntegerv(GL_BLEND_DST_RGB, &last_blend_dst_rgb);
+    GLint last_blend_src_alpha; glGetIntegerv(GL_BLEND_SRC_ALPHA, &last_blend_src_alpha);
+    GLint last_blend_dst_alpha; glGetIntegerv(GL_BLEND_DST_ALPHA, &last_blend_dst_alpha);
+    GLint last_blend_equation_rgb; glGetIntegerv(GL_BLEND_EQUATION_RGB, &last_blend_equation_rgb);
+    GLint last_blend_equation_alpha; glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &last_blend_equation_alpha);
+    GLint last_viewport[4]; glGetIntegerv(GL_VIEWPORT, last_viewport);
+    GLint last_scissor_box[4]; glGetIntegerv(GL_SCISSOR_BOX, last_scissor_box);
+    GLboolean last_enable_blend = glIsEnabled(GL_BLEND);
+    GLboolean last_enable_cull_face = glIsEnabled(GL_CULL_FACE);
+    GLboolean last_enable_depth_test = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean last_enable_scissor_test = glIsEnabled(GL_SCISSOR_TEST);
+
+    // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_SCISSOR_TEST);
+
+    // Setup viewport, orthographic projection matrix
+    glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
+    const float ortho_projection[4][4] =
+    {
+        { 2.0f/io.DisplaySize.x, 0.0f,                   0.0f, 0.0f },
+        { 0.0f,                  2.0f/-io.DisplaySize.y, 0.0f, 0.0f },
+        { 0.0f,                  0.0f,                  -1.0f, 0.0f },
+        {-1.0f,                  1.0f,                   0.0f, 1.0f },
+    };
+    glUseProgram(platformContext->shaderID);
+    glUniform1i(platformContext->attribLocationTex, 0);
+    glUniformMatrix4fv(platformContext->attribLocationProjMtx, 1, GL_FALSE, &ortho_projection[0][0]);
+    glBindVertexArray(platformContext->vaoID);
+
+    for (int n = 0; n < drawData->CmdListsCount; n++)
+    {
+        const ImDrawList* cmd_list = drawData->CmdLists[n];
+        const ImDrawIdx* idx_buffer_offset = 0;
+
+        glBindBuffer(GL_ARRAY_BUFFER, platformContext->vboID);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->VtxBuffer.Size * (int)sizeof(ImDrawVert)), (const GLvoid*)cmd_list->VtxBuffer.Data, GL_STREAM_DRAW);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, platformContext->elementsID);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->IdxBuffer.Size * (int)sizeof(ImDrawIdx)), (const GLvoid*)cmd_list->IdxBuffer.Data, GL_STREAM_DRAW);
+
+        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+        {
+            const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+            if (pcmd->UserCallback)
+            {
+                pcmd->UserCallback(cmd_list, pcmd);
+            }
+            else
+            {
+                glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
+                glScissor((int)pcmd->ClipRect.x, (int)(fb_height - pcmd->ClipRect.w), (int)(pcmd->ClipRect.z - pcmd->ClipRect.x), (int)(pcmd->ClipRect.w - pcmd->ClipRect.y));
+                glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount, sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, idx_buffer_offset);
+            }
+            idx_buffer_offset += pcmd->ElemCount;
+        }
+    }
+
+    // Restore modified GL state
+    glUseProgram((GLuint)last_program);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)last_texture);
+    glActiveTexture((GLuint)last_active_texture);
+    glBindVertexArray((GLuint)last_vertex_array);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)last_array_buffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)last_element_array_buffer);
+    glBlendEquationSeparate((GLuint)last_blend_equation_rgb, (GLuint)last_blend_equation_alpha);
+    glBlendFuncSeparate((GLuint)last_blend_src_rgb, (GLuint)last_blend_dst_rgb, (GLuint)last_blend_src_alpha, (GLuint)last_blend_dst_alpha);
+    if (last_enable_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (last_enable_cull_face) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    if (last_enable_depth_test) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (last_enable_scissor_test) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+    glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
+    glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
+
+
+    SDL_GL_SwapWindow(platformContext->window);
+    CO_ASSERT(glGetError() == GL_NO_ERROR);
+}
+
+#ifdef MT_RENDER
 static void renderDebuggerThread(void *arg) {
     auto platformContext = (DebuggerPlatformContext*)arg;
     auto gbDebug = platformContext->gbDebug;
@@ -366,141 +568,12 @@ static void renderDebuggerThread(void *arg) {
             waitForCondition(gbDebug->renderCondition, gbDebug->debuggerMutex);
         }
         gbDebug->shouldRender = false;
-        SDL_GL_MakeCurrent(platformContext->window, platformContext->glContext);
-        glClearColor(1.0f, 0, 0, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        foriarr (gbDebug->tiles) {
-            auto tile = gbDebug->tiles[i];
-
-            //TODO: might have to do this update out of this thread
-            if (tile.needsUpdate) {
-                u32 pixels[TILE_HEIGHT * SCREEN_SCALE * TILE_WIDTH * SCREEN_SCALE];
-                for (i64 y = 0; y < TILE_HEIGHT * SCREEN_SCALE; y+=SCREEN_SCALE) {
-                    for (i64 x = 0; x < TILE_WIDTH * SCREEN_SCALE; x+=SCREEN_SCALE) {
-                        u32 pixel;
-                        switch ((PaletteColor)tile.pixels[(y/SCREEN_SCALE)*TILE_WIDTH + (x/SCREEN_SCALE)]) {
-                        case PaletteColor::White: pixel = 0xFFFFFFFF; break;
-                        case PaletteColor::LightGray: pixel = 0xFFAAAAAA; break;
-                        case PaletteColor::DarkGray: pixel = 0xFF555555; break;
-                        case PaletteColor::Black: pixel = 0xFF000000; break;
-                        }
-
-                        for (i64 y2 = 0; y2 < SCREEN_SCALE; y2++) {
-                            for (i64 x2 = 0; x2 < SCREEN_SCALE; x2++) {
-                                pixels[((y+y2)*TILE_WIDTH*SCREEN_SCALE) + (x + x2)] = pixel;
-                            }
-                        }
-
-                    }
-                }
-                glBindTexture(GL_TEXTURE_2D, (GLuint)(u64)tile.textureID);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TILE_WIDTH * SCREEN_SCALE, TILE_HEIGHT * SCREEN_SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-                tile.needsUpdate = false;
-            }
-        }
-
-        auto drawData = ImGui::GetDrawData();
-        // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
-        ImGuiIO& io = ImGui::GetIO();
-        int fb_width = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
-        int fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
-        CO_ASSERT(fb_width != 0 && fb_height != 0);
-        drawData->ScaleClipRects(io.DisplayFramebufferScale);
-
-        // Backup GL state
-        GLint last_active_texture; glGetIntegerv(GL_ACTIVE_TEXTURE, &last_active_texture);
-        glActiveTexture(GL_TEXTURE0);
-        GLint last_program; glGetIntegerv(GL_CURRENT_PROGRAM, &last_program);
-        GLint last_texture; glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
-        GLint last_array_buffer; glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_array_buffer);
-        GLint last_element_array_buffer; glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &last_element_array_buffer);
-        GLint last_vertex_array; glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &last_vertex_array);
-        GLint last_blend_src_rgb; glGetIntegerv(GL_BLEND_SRC_RGB, &last_blend_src_rgb);
-        GLint last_blend_dst_rgb; glGetIntegerv(GL_BLEND_DST_RGB, &last_blend_dst_rgb);
-        GLint last_blend_src_alpha; glGetIntegerv(GL_BLEND_SRC_ALPHA, &last_blend_src_alpha);
-        GLint last_blend_dst_alpha; glGetIntegerv(GL_BLEND_DST_ALPHA, &last_blend_dst_alpha);
-        GLint last_blend_equation_rgb; glGetIntegerv(GL_BLEND_EQUATION_RGB, &last_blend_equation_rgb);
-        GLint last_blend_equation_alpha; glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &last_blend_equation_alpha);
-        GLint last_viewport[4]; glGetIntegerv(GL_VIEWPORT, last_viewport);
-        GLint last_scissor_box[4]; glGetIntegerv(GL_SCISSOR_BOX, last_scissor_box);
-        GLboolean last_enable_blend = glIsEnabled(GL_BLEND);
-        GLboolean last_enable_cull_face = glIsEnabled(GL_CULL_FACE);
-        GLboolean last_enable_depth_test = glIsEnabled(GL_DEPTH_TEST);
-        GLboolean last_enable_scissor_test = glIsEnabled(GL_SCISSOR_TEST);
-
-        // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled
-        glEnable(GL_BLEND);
-        glBlendEquation(GL_FUNC_ADD);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDisable(GL_CULL_FACE);
-        glDisable(GL_DEPTH_TEST);
-        glEnable(GL_SCISSOR_TEST);
-
-        // Setup viewport, orthographic projection matrix
-        glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
-        const float ortho_projection[4][4] =
-        {
-            { 2.0f/io.DisplaySize.x, 0.0f,                   0.0f, 0.0f },
-            { 0.0f,                  2.0f/-io.DisplaySize.y, 0.0f, 0.0f },
-            { 0.0f,                  0.0f,                  -1.0f, 0.0f },
-            {-1.0f,                  1.0f,                   0.0f, 1.0f },
-        };
-        glUseProgram(platformContext->shaderID);
-        glUniform1i(platformContext->attribLocationTex, 0);
-        glUniformMatrix4fv(platformContext->attribLocationProjMtx, 1, GL_FALSE, &ortho_projection[0][0]);
-        glBindVertexArray(platformContext->vaoID);
-
-        for (int n = 0; n < drawData->CmdListsCount; n++)
-        {
-            const ImDrawList* cmd_list = drawData->CmdLists[n];
-            const ImDrawIdx* idx_buffer_offset = 0;
-
-            glBindBuffer(GL_ARRAY_BUFFER, platformContext->vboID);
-            glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->VtxBuffer.Size * (int)sizeof(ImDrawVert)), (const GLvoid*)cmd_list->VtxBuffer.Data, GL_STREAM_DRAW);
-
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, platformContext->elementsID);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->IdxBuffer.Size * (int)sizeof(ImDrawIdx)), (const GLvoid*)cmd_list->IdxBuffer.Data, GL_STREAM_DRAW);
-
-            for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
-            {
-                const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-                if (pcmd->UserCallback)
-                {
-                    pcmd->UserCallback(cmd_list, pcmd);
-                }
-                else
-                {
-                    glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
-                    glScissor((int)pcmd->ClipRect.x, (int)(fb_height - pcmd->ClipRect.w), (int)(pcmd->ClipRect.z - pcmd->ClipRect.x), (int)(pcmd->ClipRect.w - pcmd->ClipRect.y));
-                    glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount, sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, idx_buffer_offset);
-                }
-                idx_buffer_offset += pcmd->ElemCount;
-            }
-        }
-
-        // Restore modified GL state
-        glUseProgram((GLuint)last_program);
-        glBindTexture(GL_TEXTURE_2D, (GLuint)last_texture);
-        glActiveTexture((GLuint)last_active_texture);
-        glBindVertexArray((GLuint)last_vertex_array);
-        glBindBuffer(GL_ARRAY_BUFFER, (GLuint)last_array_buffer);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)last_element_array_buffer);
-        glBlendEquationSeparate((GLuint)last_blend_equation_rgb, (GLuint)last_blend_equation_alpha);
-        glBlendFuncSeparate((GLuint)last_blend_src_rgb, (GLuint)last_blend_dst_rgb, (GLuint)last_blend_src_alpha, (GLuint)last_blend_dst_alpha);
-        if (last_enable_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-        if (last_enable_cull_face) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-        if (last_enable_depth_test) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-        if (last_enable_scissor_test) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
-        glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
-        glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
-
-        
-        SDL_GL_SwapWindow(platformContext->window);
+        renderDebugger(gbDebug, platformContext);
         unlockMutex(gbDebug->debuggerMutex);
         
     }
 }
+#endif
 
 static bool
 initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *programState, int mainScreenX, int mainScreenY) {
@@ -509,9 +582,14 @@ initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#ifdef MT_RENDER
     SDL_GL_SetSwapInterval(1);
+#else 
+    SDL_GL_SetSwapInterval(0);
+#endif
+    
     auto window = SDL_CreateWindow("Debugger", mainScreenX + 20, mainScreenY + 20,
                                    DEBUG_WINDOW_MIN_WIDTH, DEBUG_WINDOW_MIN_HEIGHT, 
                                    SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
@@ -662,6 +740,9 @@ initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *
         tile->textureID = (void*)textureID;
         tile->needsUpdate = true;
     }
+    out->gbDebug = gbDebug;
+    SDL_GL_MakeCurrent(out->window, nullptr);
+#ifdef MT_RENDER
     out->isRunning = true;
     if (!gbDebug->debuggerMutex) {
         gbDebug->debuggerMutex = createMutex();
@@ -670,9 +751,10 @@ initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *
         gbDebug->renderCondition = createWaitCondition();
     }
     gbDebug->shouldRender = false;
-    out->gbDebug = gbDebug;
-    SDL_GL_MakeCurrent(out->window, nullptr);
+    
     out->renderThread = startThread(renderDebuggerThread, out);
+#endif
+
     return true;
 }
 
@@ -714,10 +796,10 @@ static bool backupCartRAMFile(const char *fileNameToBackup, const char *extensio
     char newPath[MAX_PATH_LEN];
     timestampFileName(fileNameToBackup, extension, newPath);
     char *srcFileName = nullptr;
-    buf_printf(srcFileName, "%s.%s",fileNameToBackup, extension);
+    buf_gen_memory_printf(srcFileName, "%s.%s",fileNameToBackup, extension);
     ALERT("Invalid cart RAM file: %s%s! This file will be copied to %s%s and a new file will be created.", homeDirectory, srcFileName, homeDirectory, newPath);
     auto copyResult = copyFile(srcFileName, newPath, fileMemory);
-    buf_free(srcFileName);
+    buf_gen_memory_free(srcFileName);
     switch (copyResult) {
     case FileSystemResultCode::OK: break;
     case FileSystemResultCode::OutOfSpace:  {
@@ -736,28 +818,458 @@ static bool backupCartRAMFile(const char *fileNameToBackup, const char *extensio
     return true;
 }
 
+static bool handleInputMappingFromConfig(Input *input, Input::Action action,
+                                         ConfigKey *configKey, ConfigValue *configValues, isize numConfigValues) {
+    int code;
+    fori (numConfigValues) {
+        ConfigValue *configValue = &configValues[i];
+        switch (configValue->type) {
+        case ConfigValueType::GamepadMapping: {
+            code = gamepadMappingToSDLButton[(int)configValue->gamepadMapping.value];
+            
+            Input::Action boundAction;
+            if (retrieveActionForInputCode(code, &boundAction, &input->gamepadMap)) {
+                char *configValueString = PUSHMCLR(configValue->textFromFile.len + 1, char);
+                AutoMemory am(configValueString);
+                copyMemory(configValue->textFromFile.data, configValueString, configValue->textFromFile.len);
+                ALERT_EXIT("In %s: '%s' cannot be bound multiple to emulator actions ('%s' and '%s').",
+                           GBEMU_CONFIG_FILENAME, configValueString,
+                           inputActionToStr[(int)boundAction], inputActionToStr[(int)action]);
+                return false;
+            }
+            registerInputMapping(code, action, &input->gamepadMap);
+        } break;
+        case ConfigValueType::KeyMapping: {
+            switch (configValue->keyMapping.type) {
+            case KeyMappingType::Character: {
+                code = utf32FromUTF8(configValue->keyMapping.characterValue);
+            } break;
+            case KeyMappingType::MovementKey: {
+                SDL_Keycode sdlCode = movementKeyMappingToSDLKeyCode[(int)configValue->keyMapping.movementKeyValue];
+                code = sdlCode;
+            } break;
+            }
+            auto map = (configValue->keyMapping.isCtrlHeld) ?
+                                    &input->ctrlKeysMap : &input->keysMap;
+            Input::Action boundAction;
+            if (retrieveActionForInputCode(code, &boundAction, map)) {
+                char *configValueString = PUSHMCLR(configValue->textFromFile.len + 1, char);
+                AutoMemory am(configValueString);
+                copyMemory(configValue->textFromFile.data, configValueString, configValue->textFromFile.len);
+                ALERT_EXIT("In %s: '%s' cannot be bound multiple to emulator actions ('%s' and '%s').",
+                           GBEMU_CONFIG_FILENAME, configValueString,
+                           inputActionToStr[(int)boundAction], inputActionToStr[(int)action]);
+                return false;
+            }
+            registerInputMapping(code, action, map );
+        } break;
+        default: {
+            char *configKeyString = PUSHMCLR(configKey->textFromFile.len + 1, char);
+            AutoMemory am(configKeyString);
+            copyMemory(configKey->textFromFile.data, configKeyString, configKey->textFromFile.len);
+            ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a gamepad or key mapping.",
+                       configKeyString, configKey->line, configKey->posInLine, GBEMU_CONFIG_FILENAME);
+            return false;
+        } break;
+        }
+    }
+
+    return true;
+
+}
+static void showConfigError(const char *message,  const ParserResult *result) {
+    char *errorLine = PUSHMCLR(result->errorLineLen + 5, char);
+    isize errorTokenLen = result->stringAfterErrorToken - result->errorToken;
+    char *errorToken = PUSHMCLR(errorTokenLen + 1, char);
+    strncpy(errorToken, result->errorToken, (usize)errorTokenLen); 
+    
+    CO_ERR("Parser config status: %d", result->status);
+    char *tmp = strncpy(errorLine, result->errorLine, (usize)(result->errorToken - result->errorLine));
+    CO_ASSERT_EQ(result->errorToken - result->errorLine, (isize)strlen(tmp));
+    tmp += result->errorToken - result->errorLine;
+    *tmp++ = '<';
+    *tmp++ = '<';
+    strncpy(tmp, errorToken, (usize)errorTokenLen); 
+    CO_ASSERT_EQ(result->stringAfterErrorToken - result->errorToken, (isize)strlen(tmp));
+    tmp += errorTokenLen;
+    *tmp++ = '>';
+    *tmp++ = '>';
+    strncpy(tmp, result->stringAfterErrorToken, (usize)(result->errorLine + result->errorLineLen - result->stringAfterErrorToken ));
+    CO_ASSERT_EQ(strlen(result->errorLine) + 3, strlen(errorLine));
+    //ALERT_EXIT has a space before "Exiting...", so we will just hard code it here. 
+    ALERT("Invalid value '%s' in %s on line %d -- %s." ENDL ENDL "%s" ENDL ENDL "Exiting...", errorToken, GBEMU_CONFIG_FILENAME, result->errorLineNumber, message, errorLine);
+    POPM(errorLine);
+}
+
+static inline UTF8Character utf8CharFromScancode(SDL_Scancode scancode, char defaultChar) {
+   SDL_Keycode ret = SDL_GetKeyFromScancode(scancode);
+   if (ret & SDLK_SCANCODE_MASK) {
+      return utf8FromUTF32(defaultChar); 
+   }
+   
+   return utf8FromUTF32(ret < 0x80 ? tolower(ret) : ret);
+}
+
+struct PrintableControl {
+    UTF32Character keyCode;  
+    bool isCtrlDown;
+    bool isGamepadControl;
+    char *stringToPrint; 
+    const char *sectionHeader;
+};
+static void concatKeyString(char **targetString, const PrintableControl *mapping) {
+    if (mapping->isCtrlDown) {
+        buf_malloc_strcat(*targetString, CTRL);
+    }
+    if ((mapping->keyCode & SDLK_SCANCODE_MASK) || iscntrl(mapping->keyCode)) {
+        foriarr (movementKeyMappingToSDLKeyCode) {
+            if (movementKeyMappingToSDLKeyCode[i] == mapping->keyCode) {
+                buf_malloc_strcat(*targetString, movementKeyMappingToString[i]);
+                break;
+            }
+        }
+    }
+    else {
+        buf_malloc_strcat(*targetString, utf8FromUTF32(tolower(mapping->keyCode)).string);
+    }
+    if (!mapping->isCtrlDown) {
+        buf_malloc_strcat(*targetString, " Key");
+    }
+}
+ 
+static void showInputMapDialog(SDL_Window *mainWindow,
+                                Input::CodeToActionMap *keyMap,
+                                 Input::CodeToActionMap *ctrlKeyMap,
+                                 Input::CodeToActionMap *gamepadMap) { 
+    
+    PrintableControl *mappingsToPrint = nullptr;
+    PrintableControl *showDialogMapping = nullptr;
+    
+    {
+        PrintableControl pm;
+        pm.sectionHeader = ENDL "[[Keyboard]]" ENDL;
+        pm.stringToPrint = nullptr;
+        buf_malloc_push(mappingsToPrint, pm);
+    }
+    foribuf (keyMap->mappings) {
+        Input::Mapping *mapping = &keyMap->mappings[i];
+        PrintableControl pm;
+        pm.isCtrlDown = false;
+        pm.keyCode = mapping->code;
+        pm.isGamepadControl = false;
+        pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
+        pm.sectionHeader = nullptr;
+        buf_malloc_push(mappingsToPrint, pm);
+        if (mapping->action == Input::Action::ShowControls) {
+            showDialogMapping = buf_end(mappingsToPrint) - 1;
+        }
+    }
+    {
+        PrintableControl pm;
+        pm.stringToPrint = nullptr;
+        pm.sectionHeader = ENDL;
+        buf_malloc_push(mappingsToPrint, pm);
+    }
+    foribuf (ctrlKeyMap->mappings) {
+        Input::Mapping *mapping = &ctrlKeyMap->mappings[i];
+        PrintableControl pm;
+        pm.isCtrlDown = true;
+        pm.keyCode = mapping->code;
+        pm.isGamepadControl = false;
+        pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
+        pm.sectionHeader = nullptr;
+        buf_malloc_push(mappingsToPrint, pm);
+        if (mapping->action == Input::Action::ShowControls) {
+            showDialogMapping = buf_end(mappingsToPrint) - 1;
+        }
+    }
+    {
+        PrintableControl pm;
+        pm.sectionHeader = ENDL "[[Gamepad]]" ENDL;
+        pm.stringToPrint = nullptr;
+        buf_malloc_push(mappingsToPrint, pm);
+    }
+    foribuf (gamepadMap->mappings) {
+        Input::Mapping *mapping = &gamepadMap->mappings[i];
+        PrintableControl pm;
+        pm.isCtrlDown = false;
+        pm.keyCode = mapping->code;
+        pm.isGamepadControl = true;
+        pm.stringToPrint = buf_malloc_string(actionToString[(int)mapping->action]);
+        pm.sectionHeader = nullptr;
+        buf_malloc_push(mappingsToPrint, pm);
+    }
+    usize longestStringSize = 0;
+    foribuf (mappingsToPrint) {
+       if(buf_len(mappingsToPrint[i].stringToPrint) > longestStringSize) {
+           longestStringSize = buf_len(mappingsToPrint[i].stringToPrint);
+       }
+    }
+    char *keymapDialog = buf_malloc_string("Below are the keyboard and gamepad controls for GBEmu." ENDL
+                                           );
+    if (showDialogMapping) {
+        buf_malloc_strcat(keymapDialog, "You can pull this message up at any time with "); 
+        concatKeyString(&keymapDialog, showDialogMapping);
+        buf_malloc_strcat(keymapDialog, "." ENDL); 
+    }
+    foribuf (mappingsToPrint) {
+        if (mappingsToPrint[i].sectionHeader) {
+            buf_malloc_strcat(keymapDialog, mappingsToPrint[i].sectionHeader);
+            continue;
+        }
+        buf_malloc_strcat(keymapDialog, mappingsToPrint[i].stringToPrint);
+        isize numPaddingSpaces = (isize)longestStringSize - (isize)buf_len(mappingsToPrint[i].stringToPrint);
+        if (numPaddingSpaces > 0) {
+            char *spaces = PUSHM(numPaddingSpaces + 1, char);
+            AutoMemory _am(spaces);
+            
+            fillMemory(spaces, ' ', numPaddingSpaces);
+            spaces[numPaddingSpaces] = '\0';
+            buf_malloc_strcat(keymapDialog, spaces);
+        }
+        
+        buf_malloc_strcat(keymapDialog, " ->  ");
+        if (mappingsToPrint[i].isGamepadControl) {
+            forjarr (gamepadMappingToSDLButton) {
+                if (gamepadMappingToSDLButton[j] == mappingsToPrint[i].keyCode) {
+                    buf_malloc_strcat(keymapDialog, gamepadMappingToString[j]);
+                    break;
+                }
+            }
+        }
+        else {
+            concatKeyString(&keymapDialog, &mappingsToPrint[i]);
+        }
+        
+        buf_malloc_strcat(keymapDialog, ENDL);
+    }
+
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "GBEmu Controls",
+                             keymapDialog, mainWindow);
+    foribuf (mappingsToPrint) {
+         buf_malloc_free(mappingsToPrint[i].stringToPrint);
+    }
+    buf_malloc_free(mappingsToPrint);
+    buf_malloc_free(keymapDialog);
+}
+static bool doConfigFileParsing(const char *configFilePath, ProgramState *programState) {
+
+    auto result = parseConfigFile(configFilePath); 
+    bool isNewConfig = false;
+    switch (result.fsResultCode) {
+    case FileSystemResultCode::OK:  {
+        //do nothing and continue 
+    } break;
+    case FileSystemResultCode::NotFound: {
+        freeParserResult(&result);
+        
+        profileStart("Save new file", profileState);
+        const char defaultConfigFileContents[] = 
+            "//See README.md for more about config.txt"
+            ENDL
+            "//Control Mappings" ENDL 
+            ENDL
+            "Up = Key %s, Gamepad Up" ENDL 
+            "Down = Key %s,  Gamepad Down" ENDL
+            "Left = Key %s, Gamepad Left" ENDL
+            "Right = Key %s, Gamepad Right" ENDL
+            ENDL 
+            "Start = Key Enter, Gamepad Start" ENDL 
+            "Select = Key %s, Gamepad Back" ENDL
+            ENDL 
+            "A = Key %s, Gamepad A" ENDL 
+            "B = Key %s, Gamepad B" ENDL
+            ENDL
+            "Rewind = Key Left, Gamepad LeftBumper" ENDL
+            "DebuggerStep = Key %s" ENDL
+            "DebuggerContinue = Key %s" ENDL
+            ENDL
+            "Mute = Key " CTRL "%s" ENDL
+            "Pause = Key " CTRL "%s" ENDL
+            "Reset = Key " CTRL "%s" ENDL
+            "ShowDebugger = Key " CTRL "%s" ENDL
+            "FullScreen = Key " CTRL "%s" ENDL
+            "ShowHomePath = Key %s" ENDL
+            "ShowControls = Key " CTRL "%s" ENDL
+            ENDL
+            "//Misc" ENDL
+            "ScreenScale = 4";
+        char *fileContents = nullptr;
+        buf_gen_memory_printf(fileContents, defaultConfigFileContents, 
+                              utf8CharFromScancode(SDL_SCANCODE_W, 'w').string,
+                              utf8CharFromScancode(SDL_SCANCODE_S, 's').string, 
+                              utf8CharFromScancode(SDL_SCANCODE_A, 'a').string,
+                              utf8CharFromScancode(SDL_SCANCODE_D, 'd').string,
+                              utf8CharFromScancode(SDL_SCANCODE_BACKSLASH, '\\').string,
+                              utf8CharFromScancode(SDL_SCANCODE_SLASH, '/').string,
+                              utf8CharFromScancode(SDL_SCANCODE_PERIOD, '.').string,
+                              utf8CharFromScancode(SDL_SCANCODE_N, 'n').string,
+                              utf8CharFromScancode(SDL_SCANCODE_C, 'c').string,
+                              utf8CharFromScancode(SDL_SCANCODE_U, 'u').string,
+                              utf8CharFromScancode(SDL_SCANCODE_P, 'p').string,
+                              utf8CharFromScancode(SDL_SCANCODE_R, 'r').string,
+                              utf8CharFromScancode(SDL_SCANCODE_B, 'b').string,
+                              utf8CharFromScancode(SDL_SCANCODE_F, 'f').string,
+                              utf8CharFromScancode(SDL_SCANCODE_H, 'h').string,
+                              utf8CharFromScancode(SDL_SCANCODE_N, 'n').string);
+                                                     
+        auto writeResult = writeDataToFile(fileContents, (isize)strlen(fileContents), configFilePath);
+        switch (writeResult) {
+        case FileSystemResultCode::OK: {
+            //continue 
+        } break;
+        default: {
+            buf_gen_memory_free(configFilePath);
+            ALERT_EXIT("Failed to save default config file. Reason: %s.", resultCodeToString[(int)writeResult]); 
+            return false;
+        } break;
+        }
+        profileEnd(profileState);
+        
+        profileStart("Parse new config file", profileState); 
+        result = parseConfigFile(configFilePath); 
+
+        switch (result.fsResultCode) {
+        case FileSystemResultCode::OK:  {
+            //do nothing and continue 
+        } break;
+
+        default: {
+            ALERT_EXIT("Failed to read the newly created" GBEMU_CONFIG_FILENAME " file. Reason: %s.",  resultCodeToString[(int)result.fsResultCode]);
+            return false;
+        } break;
+        }
+
+        profileEnd(profileState);
+        isNewConfig = true;
+
+    } break;
+    default: {
+       ALERT_EXIT("Failed to read " GBEMU_CONFIG_FILENAME ". Reason: %s.",  resultCodeToString[(int)result.fsResultCode]);
+       return false;
+    } break;
+    }
+    
+#define CASE_ERROR(errCase, msg) case ParserStatus::errCase: {\
+       showConfigError(msg, &result);\
+       return false;\
+} break
+    
+    switch (result.status) {
+    case ParserStatus::OK: {
+        //do nothing and continue 
+    } break;
+    CASE_ERROR(BadTokenStartOfLine, "Invalid config option");
+    CASE_ERROR(UnknownConfigValue, "Invalid config value");
+    CASE_ERROR(UnknownConfigKey, "Unrecognized config option");
+    CASE_ERROR(UnrecognizedKeyMapping, "Unrecognized key to map to");
+    CASE_ERROR(NumberKeyMappingNotAllowed, "Mapping to a number key is not supported");
+    CASE_ERROR(UnrecognizedGamepadMapping, "Unrecognized gamepad button to map to");
+    CASE_ERROR(MissingEquals, "Equals sign expected here");
+    CASE_ERROR(ExtraneousToken, "Extraneous token; new line expected");
+    CASE_ERROR(MissingComma, "Comma expected here");
+    case ParserStatus::UnexpectedNewLine: {
+        ALERT("Unexpected new line in %s on line %d:" ENDL ENDL "%s" ENDL ENDL "Exiting...", 
+              GBEMU_CONFIG_FILENAME, result.errorLineNumber, result.errorLine);
+        return false;
+    } break;
+    }
+#undef CASE_ERROR
+    
+    Input *input = &programState->input;
+    
+    fori (result.numConfigPairs) {
+#define CASE_MAPPING(mapping)  case ConfigKeyType::mapping: {\
+            if (!handleInputMappingFromConfig(input,\
+                Input::Action::mapping, &cp->key, cp->values, cp->numValues)) {\
+               return false;\
+            }\
+        } break
+        ConfigPair *cp = result.configPairs + i;  
+                             
+        switch (cp->key.type) {
+            //do nothing
+            break;
+        CASE_MAPPING(Start);
+        CASE_MAPPING(Select);
+        CASE_MAPPING(A);
+        CASE_MAPPING(B);
+        CASE_MAPPING(Up);
+        CASE_MAPPING(Down);
+        CASE_MAPPING(Left);
+        CASE_MAPPING(Right);
+        CASE_MAPPING(Pause);
+        CASE_MAPPING(Mute);
+        CASE_MAPPING(ShowDebugger);
+        CASE_MAPPING(ShowHomePath);
+        CASE_MAPPING(Rewind);
+        CASE_MAPPING(DebuggerStep);
+        CASE_MAPPING(DebuggerContinue);
+        CASE_MAPPING(Reset);
+        CASE_MAPPING(FullScreen);
+        CASE_MAPPING(ShowControls);
+        case ConfigKeyType::ScreenScale: {
+           if (cp->numValues != 1) {
+               ALERT_EXIT("ScreenScale config option must only take one value.");
+               return false;
+           }
+           ConfigValue *value = cp->values;
+           switch (value->type) {
+           case ConfigValueType::Integer: {
+              int screenScale = value->intValue; 
+              //validate screenScale
+              if (screenScale <= 0) {
+                  char *configKeyString = PUSHMCLR(cp->key.textFromFile.len + 1, char);
+                  AutoMemory am(configKeyString);
+                  copyMemory(cp->key.textFromFile.data, configKeyString, cp->key.textFromFile.len);
+                  ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a number greater than 0.", 
+                             configKeyString, cp->key.line, cp->key.posInLine, GBEMU_CONFIG_FILENAME);
+                  return false;
+              }
+              programState->screenScale = screenScale;
+           } break;
+           default:  {
+               char *configKeyString = PUSHMCLR(cp->key.textFromFile.len + 1, char);
+               AutoMemory am(configKeyString);
+               copyMemory(cp->key.textFromFile.data, configKeyString, cp->key.textFromFile.len);
+               ALERT_EXIT("'%s' at line: %d, column %d in %s must be bound to a number greater than 0.", 
+                          configKeyString, cp->key.line, cp->key.posInLine, GBEMU_CONFIG_FILENAME);
+               return false;
+           } break;
+           }
+        } break;
+        }
+#undef CASE_MAPPING
+    }
+
+    //defaults
+    if (programState->screenScale <= 0) {
+        ALERT("ScreenScale not found in %s.  Defaulting to a ScreenScale of %d.", GBEMU_CONFIG_FILENAME, DEFAULT_SCREEN_SCALE);
+        programState->screenScale = DEFAULT_SCREEN_SCALE;
+    }
+    
+    freeParserResult(&result);
+    
+    if (isNewConfig) {
+        showInputMapDialog(nullptr, &input->keysMap, &input->ctrlKeysMap, &input->gamepadMap);
+    }
+    return true;
+}
+
 static void 
 mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
-         SDL_AudioDeviceID audioDeviceID, SDL_GameController **controller, const char *romFileName,
+         SDL_AudioDeviceID audioDeviceID, SDL_GameController **gamepad, const char *romFileName,
          bool shouldEnableDebugMode, DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug, ProgramState *programState) {
-#ifdef CO_PROFILE
-    ProfileState *profileState = &programState->profileState;
-#endif
-    //TODO: should we not be passing gbDebug in here?
-    //change to gbemu_config
     char filePath[MAX_PATH_LEN];
     
 #define GAME_LIB_PATH "gbemu.so"
     char gbemuCodePath[MAX_PATH_LEN];
     //used for hot loading
     getCurrentWorkingDirectory(gbemuCodePath);
-    snprintf(gbemuCodePath, MAX_PATH_LEN, "%s/%s", gbemuCodePath, GAME_LIB_PATH);
+    strncat(gbemuCodePath, FILE_SEPARATOR GAME_LIB_PATH, MAX_PATH_LEN);
 #undef GAME_LIB_PATH
     
-
-
     SDL_PauseAudioDevice(audioDeviceID, 0);
-
 
     bool isRunning = true;
     bool isPaused = false;
@@ -795,6 +1307,10 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         } break;
         case FileSystemResultCode::IOError: {
             ALERT("Could not open ROM: %s. IO Error.", romFileName);
+            return;
+        } break;
+        case FileSystemResultCode::OutOfMemory: {
+            ALERT("Could not open ROM: %s. File is too big!", romFileName);
             return;
         } break;
         default: {
@@ -917,7 +1433,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         }
         
         if (!doesDirectoryExistAndIsWritable(programState->homeDirectoryPath)) {
-            ALERT("Cannot write to GBEmu home directory: %s. Permission Denied. Exiting...", programState->homeDirectoryPath);
+            ALERT_EXIT("Cannot write to GBEmu home directory: %s. Permission Denied.", programState->homeDirectoryPath);
             return;
         }
         
@@ -929,17 +1445,21 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
             switch (res) {
             case FileSystemResultCode::OK: {
                 if (!doesDirectoryExistAndIsWritable(programState->romSpecificPath)) { 
-                    ALERT("Cannot create save files at (%s). Exiting...", programState->romSpecificPath);
+                    ALERT_EXIT("Cannot create save files at (%s).", programState->romSpecificPath);
                     return;
                 }
 
             } break; 
             case FileSystemResultCode::PermissionDenied: {
-                ALERT("Cannot create save files at (%s). Permission denied. Exiting...", programState->romSpecificPath);
+                ALERT_EXIT("Cannot create save files at (%s). Permission denied.", programState->romSpecificPath);
+                return;
+            } break;
+            case FileSystemResultCode::AlreadyExists: {
+                ALERT_EXIT("A file already exists at %s. Please move or delete this file so GBEmu can use this path for save files.", programState->romSpecificPath);
                 return;
             } break;
             default:  {
-                ALERT("Cannot create save files at (%s). Exiting...", programState->romSpecificPath);
+                ALERT_EXIT("Cannot create save files at (%s).", programState->romSpecificPath);
                 return;
             } break;
             }
@@ -951,11 +1471,11 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         } break;
             
         case FileSystemResultCode::PermissionDenied:  {
-            ALERT("Cannot use required directory: %s. Permission Denied. Exiting...", programState->romSpecificPath);
+            ALERT_EXIT("Cannot use required directory: %s. Permission Denied.", programState->romSpecificPath);
             return;
         } break;
         default: {
-            ALERT("Cannot use required directory: %s. Exiting...", programState->romSpecificPath);
+            ALERT_EXIT("Cannot use required directory: %s.", programState->romSpecificPath);
             return;
         } break;
             
@@ -1055,19 +1575,19 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
     TimeUS timeNotificationIsShown = 0;
     TimeUS startNotificationTime = nowInMicroseconds();
     
-    //controller init
-    SDL_JoystickID controllerID = 0;
+    //gamepad init
+    SDL_JoystickID gamepadID = 0;
     {
         fori (SDL_NumJoysticks()) {
             if (SDL_IsGameController((int)i)) {
-                *controller = SDL_GameControllerOpen((int)i);
-                if (*controller) {
-                    controllerID = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(*controller));
+                *gamepad = SDL_GameControllerOpen((int)i);
+                if (*gamepad) {
+                    gamepadID = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(*gamepad));
                     CO_LOG("%s attached", SDL_GameControllerNameForIndex((int)i));
                     NOTIFY(notifications, "%s attached", SDL_GameControllerNameForIndex((int)i));
                 }
                 else {
-                    ALERT("Could not use controller!");
+                    ALERT("Could not use gamepad!");
                 }
                 break;
             }
@@ -1178,56 +1698,73 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                     return;
 
                 case SDL_KEYDOWN: {
-                    processKey(e.key.keysym.scancode, true, (keyMod & CTRL_KEY) != 0, &input->newState);
-                    
+                    processKeyDown(e.key.keysym.sym, (keyMod & CTRL_KEY) != 0, &input->newState, 
+                               &input->keysMap, &input->ctrlKeysMap);
                 } break;
 
                 case SDL_KEYUP: {
-                    processKey(e.key.keysym.scancode, false, (keyMod & CTRL_KEY) != 0, &input->newState);
+                    processKeyUp(e.key.keysym.sym, &input->newState, &input->keysMap, &input->ctrlKeysMap);
                 } break;
 
                 case SDL_CONTROLLERBUTTONUP:  
                 case SDL_CONTROLLERBUTTONDOWN:  {
-                    if (*controller && e.cbutton.which == controllerID) {
-                        processButton((SDL_GameControllerButton)e.cbutton.button, e.type == SDL_CONTROLLERBUTTONDOWN, &input->newState);
+                    if (*gamepad && e.cbutton.which == gamepadID) {
+                        processButton((SDL_GameControllerButton)e.cbutton.button, e.type == SDL_CONTROLLERBUTTONDOWN, &input->newState,
+                                      &input->gamepadMap);
                     }
                     
                 } break;
                 case SDL_CONTROLLERAXISMOTION: {
-                    if (*controller && e.caxis.which == controllerID) {
+                    if (*gamepad && e.caxis.which == gamepadID) {
                         switch (e.caxis.axis) {
                         case SDL_CONTROLLER_AXIS_LEFTX: {
                             input->newState.xAxis = e.caxis.value;
                             if (e.caxis.value < ANALOG_STICK_DEADZONE && e.caxis.value > -ANALOG_STICK_DEADZONE) {
-                                input->newState.left = false;
-                                input->newState.right = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->gamepadMap);
                             }
                             else if (e.caxis.value >= ANALOG_STICK_DEADZONE && 
                                      e.caxis.value > abs(input->newState.yAxis)) {
-                                input->newState.right = true;
-                                input->newState.left = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, false, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, true, &input->newState, &input->gamepadMap);
                             }
                             else if (e.caxis.value <= -ANALOG_STICK_DEADZONE && 
                                      abs(e.caxis.value) > abs(input->newState.yAxis)) {
-                                input->newState.left = true;
-                                input->newState.right = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_LEFT, true, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, false, &input->newState, &input->gamepadMap);
                             }
                         } break;
                         case SDL_CONTROLLER_AXIS_LEFTY: {
                             input->newState.yAxis = e.caxis.value;
                             if (e.caxis.value < ANALOG_STICK_DEADZONE && e.caxis.value > -ANALOG_STICK_DEADZONE) {
-                                input->newState.up = false;
-                                input->newState.down = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->gamepadMap);
                             }
                             else if (e.caxis.value >= ANALOG_STICK_DEADZONE && 
                                      e.caxis.value > abs(input->newState.xAxis)) {
-                                input->newState.down = true;
-                                input->newState.up = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, false, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true, &input->newState, &input->gamepadMap);
                             }
                             else if (e.caxis.value <= -ANALOG_STICK_DEADZONE && 
                                      abs(e.caxis.value) > abs(input->newState.xAxis)) {
-                                input->newState.up = true;
-                                input->newState.down = false;
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_UP, true, &input->newState, &input->gamepadMap);
+                                processButton(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false, &input->newState, &input->gamepadMap);
+                            }
+                        } break;
+                        case SDL_CONTROLLER_AXIS_TRIGGERLEFT: {
+                            if (e.caxis.value > ANALOG_TRIGGER_DEADZONE) {
+                                processButton(gamepadMappingToSDLButton[(int)GamepadMappingValue::LeftTrigger], true, &input->newState, &input->gamepadMap);
+                            }
+                            else if (e.caxis.value <= ANALOG_TRIGGER_DEADZONE) {
+                                processButton(gamepadMappingToSDLButton[(int)GamepadMappingValue::LeftTrigger], false, &input->newState, &input->gamepadMap);
+                            }
+                        } break;
+                        case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: {
+                            if (e.caxis.value > ANALOG_TRIGGER_DEADZONE) {
+                                processButton(gamepadMappingToSDLButton[(int)GamepadMappingValue::RightTrigger], true, &input->newState, &input->gamepadMap);
+                            }
+                            else if (e.caxis.value <= ANALOG_TRIGGER_DEADZONE) {
+                                processButton(gamepadMappingToSDLButton[(int)GamepadMappingValue::RightTrigger], false, &input->newState, &input->gamepadMap);
                             }
                         } break;
                         }
@@ -1236,30 +1773,30 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                 } break;
 
                 case SDL_CONTROLLERDEVICEADDED: {
-                    if (*controller) {
+                    if (*gamepad) {
                         break;
                     }
                     int i = e.cdevice.which;
-                    *controller = SDL_GameControllerOpen(i);
-                    controllerID = i;
-                    if (controller) {
+                    *gamepad = SDL_GameControllerOpen(i);
+                    gamepadID = i;
+                    if (gamepad) {
                         NOTIFY(notifications, "%s attached", SDL_GameControllerNameForIndex(i));
                         CO_LOG("%s attached at index %d", SDL_GameControllerNameForIndex(i), i);
                     }
                     else {
-                        CO_ERR("Could not open controller");
+                        CO_ERR("Could not open gamepad");
                     }
                     break;
                 } break;
 
                 case SDL_CONTROLLERDEVICEREMOVED: {
-                    auto controllerToClose = SDL_GameControllerFromInstanceID(e.cdevice.which);
+                    auto gamepadToClose = SDL_GameControllerFromInstanceID(e.cdevice.which);
 
-                    if (*controller == controllerToClose) {
+                    if (*gamepad == gamepadToClose) {
                         NOTIFY(notifications, "Controller detached");
                         CO_LOG("Controller detached");
-                        SDL_GameControllerClose(*controller);
-                        *controller = nullptr;
+                        SDL_GameControllerClose(*gamepad);
+                        *gamepad = nullptr;
                     }
 
                 } break;
@@ -1311,14 +1848,17 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                 }
             }
 
-            if (input->newState.debugOn && !input->oldState.debugOn && !gbDebug->isEnabled && !programState->isFullScreen) {
+            if (isActionPressed(Input::Action::ShowDebugger, input) && !gbDebug->isEnabled && !programState->isFullScreen) {
                 int windowX, windowY;
                 SDL_GetWindowPosition(window, &windowX, &windowY);
                 if (initDebugger(debuggerContext, gbDebug, programState, windowX, windowY)) {
                     gbDebug->isEnabled = true;
                 }
             }
-            if (input->newState.toggleFullScreen && !input->oldState.toggleFullScreen) {
+            if (isActionPressed(Input::Action::ShowControls, input)) {
+                showInputMapDialog(window, &input->keysMap, &input->ctrlKeysMap, &input->gamepadMap);
+            }
+            if (isActionPressed(Input::Action::FullScreen, input)) {
                 if (programState->isFullScreen) {
                     if (SDL_SetWindowFullscreen(window, 0) == 0) {
                         SDL_ShowCursor(true);
@@ -1441,6 +1981,11 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
             profileStart("Flip to screen", profileState);
             SDL_RenderPresent(renderer);
             profileEnd(profileState);
+#ifndef MT_RENDER
+            if (gbDebug->isEnabled) {
+                renderDebugger(gbDebug, debuggerContext);
+            }
+#endif
         }
 
         //draw notifications and new title
@@ -1483,7 +2028,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
             }
             profileEnd(profileState);
         }
-        
+ 
         input->oldState = input->newState;
     }
 }
@@ -1494,7 +2039,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && argc <= 4) {
         forirange (1, argc) {
             if (argv[i][0] == '-') {
-                if (strcmp("-d", argv[i]) == 0) {
+                if (strcmp(DEBUG_ON_BOOT_FLAG, argv[i]) == 0) {
                     shouldEnableDebugMode = true;
                 }
                 else {
@@ -1507,35 +2052,47 @@ int main(int argc, char **argv) {
         }
     }
     else if (argc != 1) {
-       PRINT("Usage :gbemu [-d] path_to_ROM");
+       PRINT("GBEmu -- Version %s", GBEMU_VERSION);
+       PRINT("Usage :gbemu " DEBUG_ON_BOOT_FLAG " path_to_ROM");
        PRINT("\t" DEBUG_ON_BOOT_FLAG " -- Start with the debugger screen up and emulator paused");
        return 1; 
     }
+    PRINT("GBEmu -- Version %s", GBEMU_VERSION);
     
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
     SDL_Texture *screenTexture = nullptr;
     SDL_AudioSpec as;
     SDL_AudioDeviceID audioDeviceID = 0;
-    SDL_GameController *controller = nullptr;
+    SDL_GameController *gamepad = nullptr;
 	ProgramState *programState;
     char *romsDir = nullptr;
     const char *openDialogPath = nullptr;
     const char *gbEmuHomePath; 
     char homePathConfigFilePath[MAX_PATH_LEN] = {};
     bool isHomePathValid = false;
+    char *configFilePath = nullptr;
     {
-        if (!initMemory(MB(60), MB(50))) {
-            ALERT("Not enough memory to run the emulator!");
+        initPlatformFunctions(alertDialogSDL);
+        if (!initMemory(GENERAL_MEMORY_SIZE + FILE_MEMORY_SIZE /*+ MB(10)*/, GENERAL_MEMORY_SIZE)) { //reserve 10 MB
+            //Do not use ALERT since it uses general memory which failed to init
+            alertDialog("Not enough memory to run the emulator!");
             goto exit;
         }
-        programState = PUSHM(1, ProgramState);
-        makeMemoryStack(MB(8), "fileMem", &programState->fileMemory);
+        programState = PUSHMCLR(1, ProgramState);
+        //TODO: default mappings
+//        foriarr (programState->input.inputMappingConfig.inputMappings) {
+//            InputMapping *im = programState->input.inputMappingConfig.inputMappings + i;
+//            *im = {NO_INPUT_MAPPING, NO_INPUT_MAPPING, NO_INPUT_MAPPING};
+//        }
+        makeMemoryStack(FILE_MEMORY_SIZE, "fileMem", &programState->fileMemory);
 
     }
 
-
     profileInit(&programState->profileState);
+#ifdef CO_PROFILE
+    profileState = &programState->profileState;
+#endif
 
     gbEmuHomePath = getenv(HOME_PATH_ENV_VARIABLE);
     if (gbEmuHomePath) {
@@ -1544,14 +2101,14 @@ int main(int argc, char **argv) {
            isHomePathValid = true;
         }
         else {
-            ALERT("The specified GBEmu home directory, %s, either does not exist or is not writable.\n"
-                  "Please correct or unset the %s environment variable and rerun GBEmu. Exiting...", programState->homeDirectoryPath, HOME_PATH_ENV_VARIABLE);
+            ALERT_EXIT("The specified GBEmu home directory, %s, either does not exist or is not writable.\n"
+                  "Please correct or unset the %s environment variable and rerun GBEmu.", programState->homeDirectoryPath, HOME_PATH_ENV_VARIABLE);
             return 1;
         }
     }
     if (!isHomePathValid) {
         if (!getFilePathInHomeDir(HOME_PATH_CONFIG_FILE, homePathConfigFilePath)) {
-            ALERT("Could not get user home directory! Exiting...");        
+            ALERT_EXIT("Could not get user home directory!");        
             return 1;
         }
         auto readResult = readEntireFile(homePathConfigFilePath, &programState->fileMemory);
@@ -1564,8 +2121,8 @@ int main(int argc, char **argv) {
                     isHomePathValid = true;
                 }
                 else {
-                    ALERT("The specified GBEmu home directory, %s, either does not exist or is not writable.\n"
-                          "Please correct the contents or delete the %s file and rerun GBEmu. Exiting...", 
+                    ALERT_EXIT("The specified GBEmu home directory, %s, either does not exist or is not writable.\n"
+                          "Please correct the contents or delete the %s file and rerun GBEmu.", 
                           programState->homeDirectoryPath, homePathConfigFilePath);
                     return 1;
                 }
@@ -1582,9 +2139,9 @@ int main(int argc, char **argv) {
     if (!isHomePathValid) {
 		//NOTE: interestingly, SDL_Init must be called after opening an open dialog.  else new folder dialog doesn't work in macOS
         if (!getFilePathInHomeDir(DEFAULT_GBEMU_HOME_PATH, programState->homeDirectoryPath)) {
-	    ALERT("Could not get user home directory! Exiting...");        
-	    return 1;
-	}
+            ALERT_EXIT("Could not get user home directory!");        
+            return 1;
+        }
         auto result = showHomeDirectoryDialog(programState->homeDirectoryPath, homePathConfigFilePath);
         switch (result) {
         case HomeDirectoryOption::EXIT: {
@@ -1596,17 +2153,13 @@ int main(int argc, char **argv) {
                 switch (res) {
                 case FileSystemResultCode::OK: {
                     if (!doesDirectoryExistAndIsWritable(programState->homeDirectoryPath)) { 
-                        ALERT("Cannot create GBEmu home directory (%s). Exiting...", programState->homeDirectoryPath);
+                        ALERT_EXIT("Cannot create GBEmu home directory (%s).", programState->homeDirectoryPath);
                         return 1;
                     }
 
                 } break; 
-                case FileSystemResultCode::PermissionDenied: {
-                    ALERT("Cannot create GBEmu home directory (%s). Permission denied.  Exiting...", programState->homeDirectoryPath);
-                    return 1;
-                } break;
                 default:  {
-                    ALERT("Cannot create GBEmu home directory (%s). Exiting...", programState->homeDirectoryPath);
+                    ALERT_EXIT("Cannot create GBEmu home directory (%s). Reason: %s.", programState->homeDirectoryPath, resultCodeToString[(int)res]);
                     return 1;
                 } break;
                 }
@@ -1616,7 +2169,7 @@ int main(int argc, char **argv) {
             char home[MAX_PATH_LEN];
             *home = '\0';
             if (!getFilePathInHomeDir("", home)) {
-                ALERT("Could not get user home directory! Exiting...");        
+                ALERT_EXIT("Could not get user home directory!");        
                 return 1;
             }
             for (;;) {
@@ -1640,22 +2193,37 @@ int main(int argc, char **argv) {
            //do nothing 
         } break;
         case FileSystemResultCode::PermissionDenied: {
-           ALERT("Could not persist the GBEmu home directory path to %s. Permission Denied. Please make sure your user home directory is writable. "
-                 "Exiting...",
+           ALERT_EXIT("Could not persist the GBEmu home directory path to %s. Permission Denied. Please make sure your user home directory is writable.",
                  homePathConfigFilePath);
            return 1;
         } break;
         default: {
-           ALERT("Could not persist the GBEmu home directory path to %s. Exiting...",
+           ALERT_EXIT("Could not persist the GBEmu home directory path to %s.",
                  homePathConfigFilePath);
            return 1;
         }
         }
     }
-    
+    profileStart("init sdl", &programState->profileState);
+    if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
+        ALERT("Error initing the emulator!  Reason: %s", SDL_GetError());
+        goto exit;
+    }
+    profileEnd(&programState->profileState);
+    /**********************
+     * Parse Config file
+     *********************/
+    profileStart("Parse Config file", profileState);
+    configFilePath = nullptr;
+    buf_gen_memory_printf(configFilePath, "%s" FILE_SEPARATOR GBEMU_CONFIG_FILENAME, programState->homeDirectoryPath);
+    if (!doConfigFileParsing(configFilePath, programState)) {
+        return 1;
+    }
+    buf_gen_memory_free(configFilePath);
+    profileEnd(profileState);
     
     //ROMs dir
-    buf_printf(romsDir, "%s" FILE_SEPARATOR "ROMs" FILE_SEPARATOR,programState->homeDirectoryPath);
+    buf_gen_memory_printf(romsDir, "%s" FILE_SEPARATOR "ROMs" FILE_SEPARATOR,programState->homeDirectoryPath);
     if (!doesDirectoryExistAndIsWritable(romsDir)) {
         auto res = createDir(romsDir);
         switch (res) {
@@ -1670,37 +2238,78 @@ int main(int argc, char **argv) {
     else {
         openDialogPath = romsDir; 
     }
-    profileStart("init sdl", &programState->profileState);
-    if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
-        ALERT("Error initing the emulator!  Reason: %s", SDL_GetError());
-        goto exit;
-    }
-    profileEnd(&programState->profileState);
 	if (isEmptyString(romFileName)){
 		//NOTE: interestingly, SDL_Init must be called before opening an open dialog.  else an app instance won't be created in macOS
-        //TODO: should be value from config file
         if (!openFileDialogAtPath(openDialogPath, romFileName)) {
             return 1;
         }
 	}
-    buf_free(romsDir);
+    buf_gen_memory_free(romsDir);
 
-    window =
-            SDL_CreateWindow("GB Emu", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                             WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+    window = SDL_CreateWindow("GBEmu", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                             SCREEN_WIDTH*programState->screenScale, SCREEN_HEIGHT*programState->screenScale, SDL_WINDOW_SHOWN);
 
     if (!window) {
         ALERT("Could not create window. Reason %s", SDL_GetError());
         goto exit;
     }
-
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+#ifdef MT_RENDER
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC  );
+#else
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+#endif
 
     if (!renderer) {
         ALERT("Could not init renderer. Reason %s", SDL_GetError());
         goto exit;
     }
     
+    //Check to see if screen scale is too big
+    {
+        int windowW, windowH, windowX, windowY, displayIndex; 
+        SDL_DisplayMode mode;
+        if ((displayIndex = SDL_GetWindowDisplayIndex(window)) < 0) {
+            ALERT_EXIT("Could not get display index. Reason %s", SDL_GetError());
+            goto exit;
+        }
+        
+        if (SDL_GetCurrentDisplayMode(displayIndex, &mode)) {
+            ALERT_EXIT("Could not get display mode. Reason %s", SDL_GetError());
+            goto exit;
+        }
+        int displayW = mode.w, displayH = mode.h; 
+        
+        SDL_GetWindowPosition(window, &windowX, &windowY);       
+        SDL_GetWindowSize(window, &windowW, &windowH);
+        
+        if (windowW > displayW || windowH > displayH) {
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+            int originalScreenScale = programState->screenScale;
+            do {
+                programState->screenScale--;
+            } while (SCREEN_WIDTH*programState->screenScale > displayW || SCREEN_HEIGHT*programState->screenScale > displayH);
+            
+            ALERT("The GBEmu window is too big for your display.  We have shrank the window size from %d times to %d times the scale of the GameBoy screen.",
+                  originalScreenScale, programState->screenScale);
+
+            window = SDL_CreateWindow("GBEmu", windowX, windowY,
+                                      SCREEN_WIDTH*programState->screenScale, SCREEN_HEIGHT*programState->screenScale, SDL_WINDOW_SHOWN);
+
+            if (!window) {
+                ALERT("Could not create window. Reason %s", SDL_GetError());
+                goto exit;
+            }
+
+            renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+
+            if (!renderer) {
+                ALERT("Could not init renderer. Reason %s", SDL_GetError());
+                goto exit;
+            }
+        }
+    }
+
     screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, 
                                       SCREEN_WIDTH, SCREEN_HEIGHT);
     
@@ -1724,7 +2333,6 @@ int main(int argc, char **argv) {
         goto exit;
     }
 
-    //open controller if present
 
 
     {
@@ -1740,15 +2348,15 @@ int main(int argc, char **argv) {
             }
         }
 
-        mainLoop(window, renderer, screenTexture, audioDeviceID, &controller, romFileName, shouldEnableDebugMode, debuggerContext, gbDebug, programState);
+        mainLoop(window, renderer, screenTexture, audioDeviceID, &gamepad, romFileName, shouldEnableDebugMode, debuggerContext, gbDebug, programState);
         
     }
 
 
 exit:
 
-    if (controller) {
-        SDL_GameControllerClose(controller);
+    if (gamepad) {
+        SDL_GameControllerClose(gamepad);
     }
 
     SDL_DestroyRenderer(renderer);
@@ -1771,7 +2379,6 @@ bool openFileDialogAtPath(const char *path, char *outPath) {
 		CO_ERR("Could not convert path to widechar");
 		return false;
 	}
-	//TODO utf8
 	dialog.lStructSize = sizeof(dialog);
 	dialog.Flags = OFN_FILEMUSTEXIST;
     dialog.lpstrFilter = L"Game Boy ROMs\0*.gb;*.gbc;*.sgb\0All Files\0*.*\0"; 
@@ -1799,7 +2406,7 @@ bool openDirectoryAtPath(const char *path, char *outPath) {
 		return false;
 	}
 	if (!SHGetPathFromIDListW(result, wcharPath)) {
-		ALERT("Error with path chosen.  Exiting...");
+		ALERT_EXIT("Error with path chosen.");
 		return false;
 	}
 
@@ -1807,7 +2414,7 @@ bool openDirectoryAtPath(const char *path, char *outPath) {
 		WideCharToMultiByte(CP_UTF8, 0, wcharPath, MAX_PATH, outPath, MAX_PATH_LEN, nullptr, nullptr);
 
 	if (toUTF8Result == 0) {
-		ALERT("Error using the non-ASCII path.  Exiting...");
+		ALERT_EXIT("Error using the non-ASCII path.");
 	}
 	//TODO free pidlist_absolute
 
@@ -1817,7 +2424,7 @@ bool openDirectoryAtPath(const char *path, char *outPath) {
 #include <gtk/gtk.h>
 bool openFileDialogAtPath(const char *path, char *outPath) {
     if (!gtk_init_check(nullptr, nullptr)) {
-        ALERT("Failed to init the ROM file chooser dialog. Exiting...");
+        ALERT_EXIT("Failed to init the ROM file chooser dialog.");
         return false;
     }
     GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
@@ -1866,7 +2473,7 @@ bool openFileDialogAtPath(const char *path, char *outPath) {
 
 bool openDirectoryAtPath(const char *path, char *outPath) {
     if (!gtk_init_check(nullptr, nullptr)) {
-        ALERT("Failed to init the ROM file chooser dialog. Exiting...");
+        ALERT_EXIT("Failed to init the ROM file chooser dialog.");
         return false;
     }
     GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;

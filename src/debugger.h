@@ -71,7 +71,7 @@ struct GameBoyDebug {
     bool wasCPUPaused;
     
     i64 nextFreeGBStateIndex;
-    i64 numGBStates;
+    isize numGBStates;
     TimeUS elapsedTimeSinceLastRecord;
     double frameTimeMS;
     GameBoyState recordedGBStates[60];
@@ -88,9 +88,11 @@ struct GameBoyDebug {
     }; 
     Tile tiles[0x200]; 
     
+#ifdef MT_RENDER
     Mutex *debuggerMutex;
     volatile bool shouldRender;
     WaitCondition *renderCondition;
+#endif
     
     //Input
     char inputText[32]; //32 is based on SDL
@@ -107,7 +109,7 @@ struct GameBoyDebug {
     int mouseScrollY;
     bool mouseDownState[3];
     bool isWindowInFocus;
-
+    
 };
 Breakpoint *hardwareBreakpointForAddress(u16 address, BreakpointExpectedValueType expectedValueType, GameBoyDebug *gbDebug);
 void continueFromBreakPoint(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState);

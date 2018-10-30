@@ -1,8 +1,6 @@
 //Copyright (C) 2018 Daniel Bokser.  See LICENSE.txt for license
-
-#ifndef  COMMON_H
+#ifndef COMMON_H
 #define COMMON_H
-
 
 #if defined(__APPLE__) || defined(__linux__)
 #   define UNIX
@@ -20,8 +18,10 @@
 #ifdef WINDOWS
 #include <windows.h>
 #define FILE_SEPARATOR "\\"
+#define ENDL "\r\n"
 #elif defined(UNIX)
 #define FILE_SEPARATOR "/"
+#define ENDL "\n"
 #endif
 
 #include <stdint.h>
@@ -46,7 +46,11 @@ typedef uint16_t u16;
 typedef uint8_t u8;
 
 typedef size_t usize;
+#ifdef WINDOWS
 typedef ptrdiff_t isize;
+#else
+typedef ssize_t isize;
+#endif
 
 //millisecond time
 typedef i64 TimeMS;
@@ -58,13 +62,23 @@ typedef void (TimerFn)(void*);
 
 #define ARRAY_LEN(array) ((i32)(sizeof(array)/sizeof(*array)))
 #define UNUSED(x) ((void)(x))
-#define fori(x) for (i64 i = 0; i < (x); i++)
-#define forj(x) for (i64 j = 0; j < (x); j++)
+#define fori(x) for (isize i = 0; i < (x); i++)
+#define foribuf(x) for (isize i = 0; i < ((isize)buf_len(x)); i++)
+#define forj(x) for (isize j = 0; j < (x); j++)
 #define foriarr(x) fori(ARRAY_LEN(x))
 #define forjarr(x) forj(ARRAY_LEN(x))
 #define forirange(from,to) for (i64 i = (from); i < (to); i++)
 #define forjrange(from,to) for (i64 j = (from); j < (to); j++)
 #define globalvar static
+#define ALERT(fmt, ...)  do {\
+    char *msg = nullptr;\
+    buf_gen_memory_printf(msg, fmt,##__VA_ARGS__);\
+    CO_ERR(fmt, ##__VA_ARGS__);\
+    alertDialog(msg);\
+    buf_gen_memory_free(msg);\
+}while(0)
+
+#define ALERT_EXIT(fmt, ...) ALERT(fmt" Exiting...",##__VA_ARGS__)
 
 #define GB(n) (MB(n) * 1024)
 #define MB(n) (KB(n) * 1024)
@@ -72,12 +86,12 @@ typedef void (TimerFn)(void*);
 
 #define BOOL_TO_STR(x) ((x) ? "true" : "false")
 
-#define BREAKPOINT() asm volatile ("int $3\n")
 #define PRINT(format, ...) printf(format"\n", ##__VA_ARGS__)
 #define PRINT_ERR(format, ...) fprintf(stderr, format"\n", ##__VA_ARGS__)
 
 //debug tools
 #ifdef CO_DEBUG 
+#define BREAKPOINT() asm volatile ("int $3\n")
 #define CO_ASSERT(expr) do {\
         if (!(expr)) {\
             CO_ERR("Assertion Failed on %s:%d.", __FILE__, __LINE__);\
@@ -91,6 +105,8 @@ typedef void (TimerFn)(void*);
             BREAKPOINT();\
         }\
 } while(0)
+#define CO_ASSERT_EQ(expected,actual) CO_ASSERT_MSG((expected) == (actual),\
+    "Expected: %zd, Actual %zd", expected, actual);
 
 #ifdef UNIX
 #define CO_LOG(format, ...) do { double now = nowInSeconds();\
@@ -113,7 +129,9 @@ typedef void (TimerFn)(void*);
 #else 
 #define CO_ASSERT(...)
 #define CO_ASSERT_MSG(...)
+#define CO_ASSERT_EQ(expected,actual)
 #define CO_LOG(...) 
+#define BREAKPOINT() 
 #define INVALID_CODE_PATH()
 #ifdef __APPLE__
 #define CO_ERR(format, ...) fprintf(stderr, "ERROR: " format "\n", ##__VA_ARGS__)
@@ -228,15 +246,15 @@ inline i64 intPow(i64 base, i64 exp) {
 
 //memory interface
 
-#define PUSHM(n, type) (type*)pushMemory((n) * (i64)sizeof(type)) 
-#define PUSHMCLR(n, type) (type*)pushMemory((n) * (i64)sizeof(type), true) 
-#define PUSHMSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (i64)sizeof(type)) 
-#define PUSHMCLRSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (i64)sizeof(type), true) 
-#define RESIZEM(ptr, n, type) (type*)resizeMemory((u8*)ptr, (n) * (i64)sizeof(type)) 
-#define RESIZEMSTACK(stack, ptr, n, type) (type*)resizeMemory(stack, (u8*)ptr, (n) * (i64)sizeof(type)) 
+#define PUSHM(n, type) (type*)pushMemory((n) * (isize)sizeof(type)) 
+#define PUSHMCLR(n, type) (type*)pushMemory((n) * (isize)sizeof(type), true) 
+#define PUSHMSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (isize)sizeof(type)) 
+#define PUSHMCLRSTACK(stack, n, type) (type*)pushMemory(stack, (n) * (isize)sizeof(type), true) 
+#define RESIZEM(ptr, n, type) (type*)resizeMemory((u8*)ptr, (n) * (isize)sizeof(type)) 
+#define RESIZEMSTACK(stack, ptr, n, type) (type*)resizeMemory((u8*)ptr, stack, (n) * (isize)sizeof(type)) 
 #define POPMSTACK(mem, stack) popMemory((u8*)mem, stack)
 #define POPM(mem) popMemory((u8*)mem)
-#define ZEROM(mem, n, type) zeroMemory(mem, (n) * (i64)sizeof(type))
+#define ZEROM(mem, n, type) zeroMemory(mem, (n) * (isize)sizeof(type))
 
 #define CO_MALLOC(n, type) (type*)chkMalloc((n)*sizeof(type))
 #define CO_FREE(ptr) free(ptr)
@@ -273,8 +291,9 @@ struct MemoryContext {
 #ifdef CO_DEBUG
     DebugMemorySnapshot dms;
 #endif
-
 };
+
+typedef void AlertDialogFn(const char *message);
 
 struct AutoMemory {
     MemoryStack *stack;
@@ -286,25 +305,31 @@ struct AutoMemory {
 };
 
 
+void initPlatformFunctions(AlertDialogFn *alertDialogFn);
 bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength);
-void makeMemoryStack(i64 length, const char* name, MemoryStack *out);
+void makeMemoryStack(isize length, const char* name, MemoryStack *out);
+
+extern AlertDialogFn *alertDialog;
+extern MemoryStack *generalMemory;
 
 MemoryContext *getMemoryContext();
 #ifdef CO_DEBUG
 extern "C"
 #endif
-void setMemoryContext(MemoryContext*);
+void setPlatformContext(MemoryContext *mc, AlertDialogFn *alertDialogFn);
 
-void *pushMemory(i64 size, bool clearToZero = false);
+void *pushMemory(isize size, bool clearToZero = false);
 void popMemory(u8 *memoryToPop); 
-void *resizeMemory(u8 *memoryToResize, i64 newSize);
+void *resizeMemory(u8 *memoryToResize, isize newSize);
 
-void *pushMemory(MemoryStack* stack, i64 size, bool clearToZero = false);
+void *pushMemory(MemoryStack* stack, isize size, bool clearToZero = false);
 void popMemory(u8* memoryToPop, MemoryStack* stack); 
-void *resizeMemory(u8* memoryToResize, MemoryStack* stack, i64 newSize);
+void *resizeMemory(u8* memoryToResize, MemoryStack* stack, isize newSize);
 void resetStack(MemoryStack* stack, bool clearToZero);
+isize getAmountOfMemoryLeft(MemoryStack *stack);
 
 void *chkMalloc(size_t numBytes);
+void *chkRealloc(void *ptr, size_t numBytes);
 
 void copyMemory(const void* src, void* dest, i64 lenInBytes);
 bool areStringsEqual(const char *lhs, const char *rhs, i64 lenInBytes);
@@ -317,6 +342,15 @@ int stringLength(const char *str, int maxAmount);
 void copyString(const char *src, char *dest, i64 lenInBytes);
 bool isEmptyString(const char *str);
 
+union UTF8Character {
+    u64 data;
+    u8 bytes[8];    
+    char string[8];    
+};
+typedef i32 UTF32Character;
+UTF8Character utf8FromUTF32(UTF32Character codePoint);
+UTF32Character utf32FromUTF8(UTF8Character utf8Char);
+
 inline void
 fillMemory(void* memory, u8 fillValue, i64 lenInBytes) {
     u8* bytes = (u8*)memory;
@@ -326,8 +360,7 @@ fillMemory(void* memory, u8 fillValue, i64 lenInBytes) {
     }
 }
 
-inline void
-fillMemory(i16* memory, i16 fillValue, i64 lenInBytes) {
+inline void fillMemory(i16* memory, i16 fillValue, i64 lenInBytes) {
     CO_ASSERT((lenInBytes % (i64)sizeof(i16)) == 0);
     i16* bytes = (i16*)memory;
 
@@ -336,35 +369,58 @@ fillMemory(i16* memory, i16 fillValue, i64 lenInBytes) {
     }
 }
 
-inline void
-zeroMemory(void* memory, i64 lenInBytes) {
+inline void zeroMemory(void* memory, i64 lenInBytes) {
     fillMemory(memory, (u8)0, lenInBytes);
 }
 
+//used for hash tables
+u64 hashU64(u64 key);
+
+//buf functions mostly gotten from https://github.com/pervognsen/bitwise/blob/768d59579a82944018ae4161b8f6d445be225edf/ion/common.c
 struct BufHdr {
-    size_t len;
-    size_t cap;
+    usize len;
+    usize cap;
     char buf[];
 };
 
-char *buf__printf(char *buf, const char *fmt, ...) __attribute__ ((format(printf, 2, 3)));
-void *buf__grow(const void *buf, size_t new_len, size_t elem_size);
-#ifndef MAX
-#   define MAX(x,y) (((x) > (y)) ? (x) : (y))
-#endif
-#define buf__hdr(b) ((BufHdr *)((char *)(b) - offsetof(BufHdr, buf)))
+#define buf_malloc_string(s) buf__strcat(chkMalloc, chkRealloc, (nullptr), (s))
+#define buf_malloc_printf(b, ...) buf_printf(chkMalloc, chkRealloc, b, __VA_ARGS__) 
+#define buf_malloc_strcat(dest, src) (dest = buf__strcat(chkMalloc, chkRealloc, (dest), (src))) 
+#define buf_malloc_push(b, ...) buf_push(chkMalloc, chkRealloc, b, __VA_ARGS__) 
+#define buf_malloc_free(b) ((b) ? (free(buf__hdr(b)), (b) = NULL) : 0)
+#define buf_gen_memory_printf(b, ...) buf_printf(_buf_pushMemory, _buf_resizeMemory, b, __VA_ARGS__) 
+#define buf_gen_memory_string(s) buf__strcat(_buf_pushMemory, _buf_resizeMemory, (nullptr), (s))
+#define buf_gen_memory_strcat(dest, src) (dest = buf__strcat(_buf_pushMemory, _buf_resizeMemory, (dest), (src)))
+#define buf_gen_memory_push(b, ...) buf_push(_buf_pushMemory, _buf_resizeMemory, b, __VA_ARGS__) 
+#define buf_gen_memory_free(b) ((b) ? (POPM(buf__hdr(b)), (b) = NULL) : 0)
 
 #define buf_len(b) ((b) ? buf__hdr(b)->len : 0)
 #define buf_cap(b) ((b) ? buf__hdr(b)->cap : 0)
 #define buf_end(b) ((b) + buf_len(b))
 #define buf_sizeof(b) ((b) ? buf_len(b)*sizeof(*b) : 0)
 
-#define buf_free(b) ((b) ? (POPM(buf__hdr(b)), (b) = NULL) : 0)
-#define buf_fit(b, n) ((n) <= buf_cap(b) ? 0 : ((b) = (std::remove_reference<decltype(b)>::type)buf__grow((void*)(b), (n), sizeof(*(b)))))
-#define buf_push(b, data) (buf_fit((b), 1 + buf_len(b)), (b)[buf__hdr(b)->len++] = data)
-#define buf_printf(b, ...) ((b) = buf__printf((b), __VA_ARGS__))
+
+#ifndef MAX
+#   define MAX(x,y) (((x) > (y)) ? (x) : (y))
+#endif
+#define buf__hdr(b) ((BufHdr *)((char *)(b) - offsetof(BufHdr, buf)))
+
+
+#define buf_fit(allocFn, reallocFn, b, n) ((n) <= buf_cap(b) ? 0 : ((b) = (std::remove_reference<decltype(b)>::type)buf__grow(allocFn, reallocFn, (void*)(b), (n), sizeof(*(b)))))
+#define buf_push(allocFn, reallocFn, b, data) (buf_fit(allocFn, reallocFn, (b), 1 + buf_len(b)), (b)[buf__hdr(b)->len++] = data)
+#define buf_printf(allocFn, reallocFn, b, ...) ((b) = buf__printf(allocFn, reallocFn, (b), __VA_ARGS__))
 #define buf_clear(b) ((b) ? buf__hdr(b)->len = 0 : 0)
 
+typedef void *(AllocatorFn)(usize);
+typedef void *(ReallocateFn)(void *, usize);
+inline void *_buf_pushMemory(usize size) {
+    return PUSHM((isize)size, u8);
+}
+inline void *_buf_resizeMemory(void *ptr, usize size) {
+    return RESIZEM(ptr, (isize)size, u8);
+}
+char *buf__printf(AllocatorFn *, ReallocateFn *, char *buf, const char *fmt, ...) __attribute__ ((format(printf, 4, 5)));
+void *buf__grow(AllocatorFn *, ReallocateFn *, const void *buf, size_t new_len, size_t elem_size);
 
 //file interface
 #ifdef UNIX
@@ -374,13 +430,16 @@ void *buf__grow(const void *buf, size_t new_len, size_t elem_size);
 #define MAX_PATH_LEN (MAX_PATH * 4)
 #endif
 enum class FileSystemResultCode {
-  OK,
-  PermissionDenied,
-  OutOfSpace,
-  AlreadyExists,
-  IOError,
-  NotFound,
-  Unknown
+    OK = 0,
+    PermissionDenied,
+    OutOfSpace,
+    OutOfMemory,
+    AlreadyExists,
+    IOError,
+    NotFound,
+    Unknown,
+    
+    SizeOfEnumMinus1
 };
 
 struct ReadFileResult {
@@ -406,7 +465,7 @@ i64 timestampFileName(const char *fileName, const char *extension, char *outStr)
 
 ReadFileResult readEntireFile(const char* fileName,  MemoryStack *memory);
 void freeFileBuffer(ReadFileResult* fileDataToFree, MemoryStack *memory);
-FileSystemResultCode writeDataToFile(void* data, i64 size, const char *fileName); 
+FileSystemResultCode writeDataToFile(const void* data, isize size, const char *fileName); 
 FileSystemResultCode copyFile(const char *src, const char *dest,  MemoryStack *fileMemory);
 
 MemoryMappedFileHandle *mapFileToMemory(const char *fileName, u8 **outData, usize *outLen);
@@ -504,6 +563,9 @@ struct ProfileState {
 
     double programStartTime;
 };
+#ifdef CO_PROFILE
+static ProfileState *profileState;
+#endif
 void profileInit(ProfileState *ps);
 void profileStart(const char *sectionName, ProfileState *ps);
 void profileEnd(ProfileState *ps);
@@ -530,6 +592,7 @@ typedef CircularBuffer<SoundFrame> SoundBuffer;
 
 /***implementation start***/
 #ifdef CO_IMPL
+#undef CO_IMPL
 #include <stdio.h>
 #include <errno.h>
 #include <limits.h>
@@ -553,7 +616,8 @@ struct _ThreadStartContext {
  *******************/
 //memory
 globalvar MemoryContext *memoryContext;
-globalvar MemoryStack *generalMemory;
+MemoryStack *generalMemory;
+AlertDialogFn *alertDialog;
 
 #ifdef CO_DEBUG
 DebugMemorySnapshot *memorySnapShot() {
@@ -569,7 +633,21 @@ DebugMemorySnapshot *memorySnapShot() {
 }
 #endif
 
-void makeMemoryStack(i64 size, const char *name, MemoryStack *out) {
+void makeMemoryStack(isize size, const char *name, MemoryStack *out) {
+#ifdef CO_DEBUG
+    CO_ASSERT(memoryContext->dms.numStacks < MAX_STACKS);
+    memoryContext->dms.existingStacks[memoryContext->dms.numStacks++] = out;
+#endif
+    CO_ASSERT_MSG(memoryContext->nextFreeAddress + size <= 
+            (u8*)memoryContext->memoryBase + memoryContext->size, "Request stack size %zd, bytes left: %zd", 
+                  size, ((u8*)memoryContext->memoryBase + memoryContext->size) - memoryContext->nextFreeAddress);
+    if (memoryContext->nextFreeAddress + size >
+            (u8*)memoryContext->memoryBase + memoryContext->size) {
+        ALERT_EXIT("Out of memory while creating memory stack! Request size %zd, bytes left: %zd",
+                   size, ((u8*)memoryContext->memoryBase + memoryContext->size) - memoryContext->nextFreeAddress);
+        exit(1);
+    }
+    
     fori (ARRAY_LEN(out->name) - 1) {
         out->name[i] = *name;
         if (!*name++) break;
@@ -583,13 +661,8 @@ void makeMemoryStack(i64 size, const char *name, MemoryStack *out) {
 
     memoryContext->nextFreeAddress += size;
 
-    CO_ASSERT(memoryContext->nextFreeAddress < 
-            (u8*)memoryContext->memoryBase + memoryContext->size);
 
     out->isInited = true;
-#ifdef CO_DEBUG
-    memoryContext->dms.existingStacks[memoryContext->dms.numStacks++] = out;
-#endif
     
 } 
 
@@ -600,9 +673,10 @@ MemoryContext *getMemoryContext() {
 #ifdef CO_DEBUG
 extern "C"
 #endif
-void setMemoryContext(MemoryContext *mc) {
+void setPlatformContext(MemoryContext *mc, AlertDialogFn *alertDialogFn) {
    memoryContext = mc; 
    generalMemory = mc->generalMemory;
+   alertDialog = alertDialogFn;
 }
 
 int stringLength(const char *str) {
@@ -656,6 +730,80 @@ bool isSubstringCaseInsensitive(const char *needle, char *haystack, i64 haystack
     }
     
     return false;
+}
+
+UTF8Character utf8FromUTF32(UTF32Character codepoint) {
+//    If U <= U+007F, then
+//    C1 = U
+//    Else if U+0080 <= U <= U+07FF, then
+//    C1 = U/64 + 192
+//    C2 = U mod 64 + 128
+//    Else if U+0800 <= U <= U+D7FF, or if U+E000 <= U <= U+FFFF, then
+//    C1 = U/4,096 + 224
+//    C2 = (U mod 4,096)/64 + 128
+//    C3 = U mod 64 + 128
+//    Else
+//    C1 = U/262,144 + 240
+//    C2 = (U mod 262,144)/4,096 + 128
+//    C3 = (U mod 4,096)/64 + 128
+//    C4 = U mod 64 + 128
+//    End if
+    UTF8Character utf8Char = {};
+    if (codepoint <= 0x7F) {
+        utf8Char.bytes[0] = (u8)codepoint;
+    }
+    else if (codepoint >= 0x80 && codepoint <= 0x7FF) {
+       utf8Char.bytes[0] = (u8)(codepoint/64 + 192);
+       utf8Char.bytes[1] = (u8)((codepoint % 64) + 128);
+    }
+    else if ((codepoint >= 0x800 && codepoint <= 0xD7FF) ||
+             (codepoint >= 0xE000 && codepoint <= 0xFFFF)) {
+        
+       utf8Char.bytes[0] = (u8)(codepoint/4096 + 224);
+       utf8Char.bytes[1] = (u8)(((codepoint % 4096)/64) + 128);
+       utf8Char.bytes[2] = (u8)((codepoint % 64) + 128);
+    }
+    else {
+       utf8Char.bytes[0] = (u8)(codepoint/262144 + 240);
+       utf8Char.bytes[1] = (u8)(((codepoint % 262144)/4096) + 128);
+       utf8Char.bytes[2] = (u8)((codepoint % 4096)/64 + 128);
+       utf8Char.bytes[3] = (u8)((codepoint % 64) + 128);
+        
+    }
+    return utf8Char;
+}
+UTF32Character utf32FromUTF8(UTF8Character utf8Char) {
+    
+//    If a sequence has one byte, then
+//    U = C1
+//    Else if a sequence has two bytes, then
+//    U = (C1 – 192) * 64 + C2 – 128
+//    Else if a sequence has three bytes, then
+//    U = (C1 – 224) * 4,096 + (C2 – 128) * 64 + C3 – 128
+//    Else
+//    U = (C1 – 240) * 262,144 + (C2 – 128) * 4,096 + (C3 – 128) * 64 + C4 – 128
+//    End if
+    if ((utf8Char.bytes[0] & 0x80) == 0) {
+        //1 byte
+       return utf8Char.bytes[0]; 
+    }
+    else if ((utf8Char.bytes[0] & 0xE0) == 0xC0) {
+       //2 bytes 
+       return  (utf8Char.bytes[0] - 192) * 64 + (utf8Char.bytes[1] - 128);
+    }
+    else if ((utf8Char.bytes[0] & 0xF0) == 0xE0) {
+        //3 bytes
+       return  (utf8Char.bytes[0] - 224) * 4096 + 
+               (utf8Char.bytes[1] - 128) * 64 + 
+               (utf8Char.bytes[2] - 128);
+    }
+    else {
+        //4 bytes
+       return  (utf8Char.bytes[0] - 240) * 262144 + 
+               (utf8Char.bytes[1] - 128) * 4096 + 
+               (utf8Char.bytes[2] - 128) * 64 +
+               (utf8Char.bytes[3] - 128);
+    }
 }
 
 bool areStringsEqual(const char *lhs, const char *rhs, i64 lenInBytes) {
@@ -714,24 +862,31 @@ void copyMemory(const void* src, void* dest, i64 lenInBytes) {
     }
 
 }
-void *pushMemory(i64 size, bool clearToZero) {
+void *pushMemory(isize size, bool clearToZero) {
     return pushMemory(generalMemory, size, clearToZero);
 }
 void popMemory(u8* memoryToPop) {
     popMemory(memoryToPop, generalMemory);
 }
-void *resizeMemory(u8 *memoryToResize, i64 newSize) {
+void *resizeMemory(u8 *memoryToResize, isize newSize) {
     return resizeMemory(memoryToResize, generalMemory, newSize);
 }
 
-void *pushMemory(MemoryStack* stack, i64 size, bool clearToZero) {
+void *pushMemory(MemoryStack* stack, isize size, bool clearToZero) {
     CO_ASSERT(stack->isInited);
     u8* ret = stack->nextFreeAddress;
 
+    CO_ASSERT(stack->nextFreeAddress + size - stack->baseAddress <= 
+            (i64)stack->maxSize);
+    if (stack->nextFreeAddress + size - stack->baseAddress > 
+            (i64)stack->maxSize) {
+        ALERT_EXIT("Ran out of memory trying to allocate %zu bytes!", size);
+        exit(1);
+    }
+    
     stack->nextFreeAddress += size;
 
-    CO_ASSERT(stack->nextFreeAddress - stack->baseAddress <= 
-            (i64)stack->maxSize);
+    
 
     if (clearToZero) {
         zeroMemory(ret, size);
@@ -750,11 +905,11 @@ void popMemory(u8* memoryToPop, MemoryStack* stack) {
     stack->nextFreeAddress = memoryToPop;
 }
 
-void *resizeMemory(u8* memoryToResize, MemoryStack* stack, i64 newSize) {
+void *resizeMemory(u8* memoryToResize, MemoryStack* stack, isize newSize) {
     CO_ASSERT(stack->isInited);
     popMemory(memoryToResize, stack);
 
-    void* ret = pushMemory(stack, newSize, false);
+    void *ret = pushMemory(stack, newSize, false);
     return ret;
 
 }
@@ -768,10 +923,25 @@ void resetStack(MemoryStack* stack, bool clearToZero = false) {
     }
 }
 
+isize getAmountOfMemoryLeft(MemoryStack *stack) {
+   isize ret = (stack->isInited) ?
+               (stack->baseAddress + stack->maxSize) - stack->nextFreeAddress :
+               0; 
+   return ret >= 0 ? ret : 0;
+}
+
+void *chkRealloc(void *ptr, size_t numBytes) {
+    void *ret = realloc(ptr, numBytes);
+    if (!ret) {
+        ALERT_EXIT("Ran out of memory trying to realloc %zu bytes!", numBytes);
+        exit(1);
+    }
+    return ret;
+}
 void *chkMalloc(size_t numBytes) {
     void *ret = malloc(numBytes);
     if (!ret) {
-        CO_ERR("Ran out of memory trying to allocate %zu bytes!", numBytes);
+        ALERT_EXIT("Ran out of memory trying to malloc %zu bytes!", numBytes);
         exit(1);
     }
     return ret;
@@ -787,31 +957,39 @@ AutoMemory::~AutoMemory() {
     POPMSTACK(memory, stack);
 }
 
-void *buf__grow(const void *buf, size_t new_len, size_t elem_size) {
+u64 hashU64(u64 key)  {
+    key ^= (key >> 33);
+    key *= 0xff51afd7ed558ccd;
+    key ^= (key >> 33);
+
+    return key;
+}
+void *buf__grow(AllocatorFn *allocator, ReallocateFn *reallocator, const void *buf, size_t new_len, size_t elem_size) {
     CO_ASSERT(buf_cap(buf) <= (SIZE_MAX - 1)/2);
     size_t new_cap = MAX(16, MAX(1 + 2*buf_cap(buf), new_len));
     CO_ASSERT(new_len <= new_cap);
     CO_ASSERT(new_cap <= (SIZE_MAX - offsetof(BufHdr, buf))/elem_size);
-    i64 new_size = (i64)(offsetof(BufHdr, buf) + new_cap*elem_size);
+    usize new_size = (offsetof(BufHdr, buf) + new_cap*elem_size);
     BufHdr *new_hdr;
     if (buf) {
-        new_hdr = (BufHdr*)RESIZEM(buf__hdr(buf), new_size, u8);
+        new_hdr = (BufHdr*)reallocator(buf__hdr(buf), new_size);
     } else {
-        new_hdr = (BufHdr*)PUSHM(new_size, u8);
+        new_hdr = (BufHdr*)allocator(new_size);
         new_hdr->len = 0;
     }   
     new_hdr->cap = new_cap;
     return new_hdr->buf;
 }
-char *buf__printf(char *buf, const char *fmt, ...) {
+char *buf__printf(AllocatorFn *allocator, ReallocateFn *reallocator, char *buf, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     size_t cap = buf_cap(buf) - buf_len(buf);
     size_t n = 1 + (size_t)vsnprintf(buf_end(buf), cap, fmt, args);
 
     va_end(args);
+    
     if (n > cap) {
-        buf_fit(buf, n + buf_len(buf));
+        buf_fit(allocator, reallocator, buf, n + buf_len(buf));
         va_start(args, fmt);
         cap = buf_cap(buf) - buf_len(buf);
         n = 1 + (size_t)vsnprintf(buf_end(buf), cap, fmt, args);
@@ -820,6 +998,17 @@ char *buf__printf(char *buf, const char *fmt, ...) {
     }
     buf__hdr(buf)->len += n - 1;
     return buf;
+}
+char *buf__strcat(AllocatorFn *allocator, ReallocateFn *reallocator, char *dest, const char *src) {
+    usize newLen = strlen(src) + buf_len(dest) + 1;
+    buf_fit(allocator, reallocator, dest, newLen);
+    if (buf_len(dest) == 0 && buf_cap(dest) > 0) {
+       dest[0] = '\0'; 
+    }
+    char *ret = strncat(dest, src, newLen);
+    buf__hdr(ret)->len = newLen - 1;
+    CO_ASSERT_EQ(strlen(dest), buf_len(dest));
+    return ret;
 }
 
 void freeFileBuffer(ReadFileResult* fileDataToFree, MemoryStack *fileMemory) {
@@ -844,6 +1033,9 @@ FileSystemResultCode copyFile(const char *src, const char *dest, MemoryStack *fi
     return writeResult;
 }
 
+void initPlatformFunctions(AlertDialogFn *alertDialogFn) {
+    alertDialog = alertDialogFn;
+}
 
 #ifdef CO_PROFILE
 
@@ -1026,7 +1218,8 @@ Thread *startThread(ThreadFn fn, void *arg)  {
 	tsc->parameter= arg;
     int result = pthread_create(&ret->value, nullptr, threadStart, tsc);
     UNUSED(result);
-    CO_ASSERT_MSG(result == 0, "Failed to create timer thread!");
+    CO_ASSERT_MSG(result == 0, "Failed to create thread!");
+    
     
     return ret;
 }
@@ -1037,7 +1230,7 @@ Mutex *createMutex() {
     Mutex *ret = CO_MALLOC(1, Mutex);
     int result = pthread_mutex_init(&ret->value, nullptr);
     UNUSED(result);
-    CO_ASSERT_MSG(result == 0, "Could create mutex"); 
+    CO_ASSERT_MSG(result == 0, "Could not create mutex"); 
     return ret;
 }
 void lockMutex(Mutex *mutex) {
@@ -1087,7 +1280,8 @@ u64 currentThreadID() {
 
 bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
    {
-        CO_ASSERT(totalMemoryLength > generalMemoryLength);
+        totalMemoryLength += sizeof(MemoryContext) + sizeof(MemoryStack);
+        CO_ASSERT(totalMemoryLength >= generalMemoryLength);
         MemoryContext tmpMC = {};
         tmpMC.size = (i64)totalMemoryLength;
 
@@ -1107,7 +1301,7 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
 
     {
         generalMemory = (MemoryStack*)memoryContext->nextFreeAddress;
-        memoryContext->nextFreeAddress += sizeof(MemoryContext);
+        memoryContext->nextFreeAddress += sizeof(MemoryStack);
         makeMemoryStack(generalMemoryLength, "general", generalMemory);
         memoryContext->generalMemory = generalMemory;
     }
@@ -1115,6 +1309,7 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
     
     return true;
 }
+
 
 //file 
 struct MemoryMappedFileHandle {
@@ -1124,7 +1319,7 @@ struct MemoryMappedFileHandle {
 };
 
 
-FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName) {
+FileSystemResultCode writeDataToFile(const void *data, isize size, const char *fileName) {
     FILE *f = fopen(fileName, "wb");
     if (!f) {
         CO_ERR("Error opening file %s", fileName);
@@ -1138,7 +1333,7 @@ FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName)
     }
 
     if (fwrite(data, (size_t)size, 1, f) != 1) {
-        CO_ERR("Error writing %lld bytes to file %s", size, fileName);
+        CO_ERR("Error writing %zd bytes to file %s", size, fileName);
         if (ferror(f)) {
            switch (errno) {
            case ENOSPC: return FileSystemResultCode::OutOfSpace;
@@ -1157,8 +1352,7 @@ FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName)
     
     return FileSystemResultCode::OK;
 }
-ReadFileResult 
-readEntireFile(const char *fileName, MemoryStack *fileMemory) {
+ReadFileResult readEntireFile(const char *fileName, MemoryStack *fileMemory) {
     CO_ASSERT(fileMemory->isInited);
 
     ReadFileResult ret = {};
@@ -1188,10 +1382,11 @@ readEntireFile(const char *fileName, MemoryStack *fileMemory) {
     fseek(f, 0l, SEEK_END);
     size = ftell(f);
     fseek(f, 0l, SEEK_SET);
-
+    
     data = PUSHMSTACK(fileMemory, size, u8);
 
     if (!data) {
+        ret.resultCode = FileSystemResultCode::OutOfMemory; 
         goto error;
     }
 
@@ -1207,14 +1402,15 @@ readEntireFile(const char *fileName, MemoryStack *fileMemory) {
             default:
                 ret.resultCode = FileSystemResultCode::Unknown;
             }
+            goto error;
         }
         else if (size == 0) {
             ret.resultCode = FileSystemResultCode::OK;
         }
         else {
             ret.resultCode = FileSystemResultCode::Unknown;
+            goto error;
         }
-        goto error;
     }
 
     ret.data = data;
@@ -1289,7 +1485,13 @@ FileSystemResultCode changeDir(const char *path) {
 }
 
 bool doesDirectoryExistAndIsWritable(const char *path) {
-   return access(path, W_OK) == 0; 
+   struct stat pathStat;
+   if (stat(path, &pathStat) == 0) {
+       return S_ISDIR(pathStat.st_mode) && access(path, W_OK) == 0; 
+   }
+   else {
+       return false;
+   }
 }
 
 
@@ -1521,7 +1723,7 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
    {
         CO_ASSERT(totalMemoryLength > generalMemoryLength);
         MemoryContext tmpMC = {};
-        tmpMC.size = (i64)totalMemoryLength;
+        tmpMC.size = (i64)totalMemoryLength + sizeof(MemoryContext) + sizeof(MemoryStack);
 
         //TODO: play with the COMMIT and RESERVE options
         u8* prgMemBlock = (u8*)VirtualAlloc(nullptr, (SIZE_T)totalMemoryLength, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -1540,7 +1742,7 @@ bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
 
     {
         generalMemory = (MemoryStack*)memoryContext->nextFreeAddress;
-        memoryContext->nextFreeAddress += sizeof(MemoryContext);
+        memoryContext->nextFreeAddress += sizeof(MemoryStack);
         makeMemoryStack(generalMemoryLength, "general", generalMemory);
         memoryContext->generalMemory = generalMemory;
     }
@@ -1655,7 +1857,7 @@ error:
     return ret;
 
 }
-FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName) {
+FileSystemResultCode writeDataToFile(const void *data, isize size, const char *fileName) {
 	wchar_t fileNameWide[MAX_PATH + 1];
 
 	if (!convertUTF8ToWChar(fileName, fileNameWide, MAX_PATH)) {
@@ -1675,7 +1877,7 @@ FileSystemResultCode writeDataToFile(void *data, i64 size, const char *fileName)
     }
 
     if (fwrite(data, (size_t)size, 1, f) != 1) {
-        CO_ERR("Error writing %lld bytes to file %s", size, fileName);
+        CO_ERR("Error writing %zd bytes to file %s", size, fileName);
         if (ferror(f)) {
            switch (errno) {
            case ENOSPC: return FileSystemResultCode::OutOfSpace;

@@ -553,13 +553,13 @@ static void drawBreakpointWindow(GameBoyDebug *gbDebug, TimeUS dt) {
                             char *label = PUSHM(labelCharLen, char);
                             AutoMemory _am(label);
 
-                            snprintf(label, (size_t)labelCharLen, "Delete##%lld", i);
+                            snprintf(label, (size_t)labelCharLen, "Delete##%zd", i);
                             if (ImGui::Button(label)) {
                                 bp->isUsed = false;
                                 gbDebug->numBreakpoints--;
                             }
                             ImGui::SameLine(); 
-                            snprintf(label, (size_t)labelCharLen, (bp->isDisabled) ? "Enable##%lld":"Disable##%lld", i);
+                            snprintf(label, (size_t)labelCharLen, (bp->isDisabled) ? "Enable##%zd":"Disable##%zd", i);
                             if (ImGui::Button(label)) {
                                 bp->isDisabled = !bp->isDisabled;
                             }
@@ -833,9 +833,9 @@ static void drawProfileSection(ProfileState *profileState, ProfileSectionState *
     }
     ImGui::NextColumn();
     char *maxRunStr = nullptr;
-    buf_printf(maxRunStr, "%.2fus##%s", pss->maxRunTimeInSeconds * 1000000, pss->sectionName);
+    buf_gen_memory_printf(maxRunStr, "%.2fus##%s", pss->maxRunTimeInSeconds * 1000000, pss->sectionName);
     ImGui::Selectable(maxRunStr, false, ImGuiSelectableFlags_SpanAllColumns);
-    buf_free(maxRunStr);
+    buf_gen_memory_free(maxRunStr);
 
     ImGui::NextColumn();
     ImGui::Text("%.2fus", (pss->totalRunTimeInSeconds / pss->numTimesCalled) * 1000000);
@@ -884,7 +884,9 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         gbDebug->wasCPUPaused = false;
     }
 
+#ifdef MT_RENDER
     lockMutex(gbDebug->debuggerMutex);
+#endif
     ImGui::SetCurrentContext((ImGuiContext*)programState->guiContext);
 
     /* ImGui  input code  */
@@ -938,7 +940,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         }
     }
     ImGui::NewFrame();
-    if (!(gbDebug->isTypingInTextBox && IS_DOWN(start))) {
+    if (!(gbDebug->isTypingInTextBox && input->newState.enterPressed)) {
         gbDebug->isTypingInTextBox = ImGui::GetIO().WantCaptureKeyboard;
     }
 
@@ -963,8 +965,8 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         ImGui::SetWindowPos(ImVec2(0, 0), ImGuiCond_Once);
 
         ImGui::Text("Frame time %.2f", gbDebug->frameTimeMS);
-        ImGui::Text("Number of states saved: %lld", gbDebug->numGBStates);
-        ImGui::Text("Mouse X: %d, Y: %d", input->newState.mouseX / SCREEN_SCALE, input->newState.mouseY/ SCREEN_SCALE);
+        ImGui::Text("Number of states saved: %zd", gbDebug->numGBStates);
+        ImGui::Text("Mouse X: %d, Y: %d", input->newState.mouseX / DEFAULT_SCREEN_SCALE, input->newState.mouseY/ DEFAULT_SCREEN_SCALE);
         if (ImGui::CollapsingHeader("CPU")) {
             ImGui::Text("A: %X B: %X C: %X D: %X", cpu->A, cpu->B, cpu->C, cpu->D);
             ImGui::Text("E: %X F: %X H: %X L: %X", cpu->E, cpu->F, cpu->H, cpu->L);
@@ -991,7 +993,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
 
             //ImGui::Text("In BIOS: %s", BOOL_TO_STR(mmu->inBios));
             ImGui::Text("Clock speed: %f cyles", cpu->cylesExecutedThisFrame / (dt/ 1000000.));
-            ImGui::Text("Total Cycles: %lld", cpu->totalCycles);
+            ImGui::Text("Total Cycles: %" PRId64, cpu->totalCycles);
         }
 
         if (ImGui::CollapsingHeader("Timer/Divider")) {
@@ -1072,8 +1074,8 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                         mmu->currentROMBank, mmu->currentRAMBank);
             ImGui::Text("Has RAM: %s, Has Battery: %s, Has RTC: %s",
                         BOOL_TO_STR(mmu->hasRAM), BOOL_TO_STR(mmu->hasBattery), BOOL_TO_STR(mmu->hasRTC));
-            ImGui::Text("RAM Enabled: %s, RAM Size: %lld", BOOL_TO_STR(mmu->isCartRAMEnabled), mmu->cartRAMSize);
-            ImGui::Text("ROM Size %lld", mmu->romSize);
+            ImGui::Text("RAM Enabled: %s, RAM Size: %zd", BOOL_TO_STR(mmu->isCartRAMEnabled), (isize)mmu->cartRAMSize);
+            ImGui::Text("ROM Size %zd", (isize)mmu->romSize);
 
         }
 
@@ -1257,25 +1259,25 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             if (ImGui::Button("Save")) {
                 char *buffer = nullptr;
                 fori(numColumns - 1) {
-                    buf_printf(buffer, "%s,", columns[i]);
+                    buf_gen_memory_printf(buffer, "%s,", columns[i]);
                 }
-                buf_printf(buffer, "%s,Total Runtime", columns[numColumns - 1]);
-                buf_printf(buffer, "\r\n");
+                buf_gen_memory_printf(buffer, "%s,Total Runtime", columns[numColumns - 1]);
+                buf_gen_memory_printf(buffer, "\r\n");
 
                 fori(profileState->numProfileSections) {
                     auto pss = profileSectionStateForName(profileState->sectionNames[i], profileState);
-                    buf_printf(buffer, "%s,", pss->sectionName);
-                    buf_printf(buffer, "%.2fus,", pss->maxRunTimeInSeconds * 1000000);
-                    buf_printf(buffer, "%.2fus,", (pss->totalRunTimeInSeconds / pss->numTimesCalled) * 1000000);
-                    buf_printf(buffer, "%.2fs,", pss->totalRunTimeInSeconds);
-                    buf_printf(buffer, "%.2f%%,", (pss->totalRunTimeInSeconds / (now - profileState->programStartTime)) * 100);
-                    buf_printf(buffer, "%.2f", now - profileState->programStartTime);
-                    buf_printf(buffer, "\r\n");
+                    buf_gen_memory_printf(buffer, "%s,", pss->sectionName);
+                    buf_gen_memory_printf(buffer, "%.2fus,", pss->maxRunTimeInSeconds * 1000000);
+                    buf_gen_memory_printf(buffer, "%.2fus,", (pss->totalRunTimeInSeconds / pss->numTimesCalled) * 1000000);
+                    buf_gen_memory_printf(buffer, "%.2fs,", pss->totalRunTimeInSeconds);
+                    buf_gen_memory_printf(buffer, "%.2f%%,", (pss->totalRunTimeInSeconds / (now - profileState->programStartTime)) * 100);
+                    buf_gen_memory_printf(buffer, "%.2f", now - profileState->programStartTime);
+                    buf_gen_memory_printf(buffer, "\r\n");
                 }
                 i64 fileNameLen = timestampFileName("profile", "csv", fileName);
                 writeDataToFile(buffer, (i64)buf_len(buffer), fileName);
                 copyMemory(fileName, gbDebug->lastFileNameWritten, (i64)fileNameLen + 1);
-                buf_free(buffer);
+                buf_gen_memory_free(buffer);
             }
 
             if (gbDebug->lastFileNameWritten[0]) {
@@ -1364,7 +1366,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                     tile.backgroundTileRefAddr = backgroundTileRefAddr;
                     tile.tileIndex = tileIndex;
 
-                    buf_push(tiles, tile);
+                    buf_gen_memory_push(tiles, tile);
 
                 }
             }
@@ -1376,10 +1378,10 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                                 tile->backgroundTileRefAddr + 0x8000, tile->backgroundTileRef, 
                                 tile->x, tile->y);
                     ImGui::SameLine();
-                    ImGui::Image(gbDebug->tiles[tile->tileIndex].textureID, ImVec2(TILE_WIDTH * SCREEN_SCALE, TILE_HEIGHT * SCREEN_SCALE));
+                    ImGui::Image(gbDebug->tiles[tile->tileIndex].textureID, ImVec2(TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE));
                 }
             }
-            buf_free(tiles);
+            buf_gen_memory_free(tiles);
 
         }
         ImGui::End();
@@ -1394,7 +1396,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             u8 *oamRefs = nullptr;
             for (i64 i = 0; i < ARRAY_LEN(mmu->lcd.oam); i += 4) {
                 if (oam[i] > 0 && oam[i] < SCREEN_HEIGHT + MAX_SPRITE_HEIGHT && oam[i+1] > 0 && oam[i+1] < SCREEN_WIDTH + MAX_SPRITE_WIDTH) {
-                    buf_push(oamRefs, oam[i+2]);
+                    buf_gen_memory_push(oamRefs, oam[i+2]);
                 }
             }
             if (buf_len(oamRefs) > 0) {
@@ -1402,7 +1404,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                 fori ((i64)buf_len(oamRefs)) {
                     ImGui::Text("OAM Addr: %zX, X: %u, Y: %u, Tile Ref: %d, Flags: %X", (size_t)i + 0xFE00, oam[i+1], oam[i], oam[i+2], oam[i+3]);
                     ImGui::SameLine();
-                    ImGui::Image(gbDebug->tiles[oamRefs[i]].textureID, ImVec2(TILE_WIDTH * SCREEN_SCALE, TILE_HEIGHT * SCREEN_SCALE));
+                    ImGui::Image(gbDebug->tiles[oamRefs[i]].textureID, ImVec2(TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE));
                 }
                 clipper.End();
             }
@@ -1585,7 +1587,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         if (ImGui::Begin("Sound Debug", &gbDebug->isSoundViewOpen, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("Is muted: %s", soundState->isMuted ? "true" : "false");
 
-            ImGui::Text("Samples backed up %lld", mmu->soundFramesBuffer.numItemsQueued);
+            ImGui::Text("Samples backed up %zd", (isize)mmu->soundFramesBuffer.numItemsQueued);
             ImGui::Text("Cycles since last frame seq tick: %d", mmu->cyclesSinceLastFrameSequencer);
             ImGui::Text("Master Left Volume: %d  Master Right Volume %d", mmu->masterLeftVolume, mmu->masterRightVolume); 
 
@@ -1811,11 +1813,13 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
 
     ImGui::Render();
     /***************************
-         * Signal to render debugger
-         ***************************/
+     * Signal to render debugger
+     ***************************/
+#ifdef MT_RENDER
     gbDebug->shouldRender = true; 
     broadcastCondition(gbDebug->renderCondition);
     unlockMutex(gbDebug->debuggerMutex);
+#endif
     profileEnd(profileState);
 
     //NOTE: used to test the pop that happens when switching between applications

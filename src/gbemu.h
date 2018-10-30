@@ -1,8 +1,13 @@
 //Copyright (C) 2018 Daniel Bokser.  See LICENSE.txt for license
 
-#pragma once 
+#ifndef GBEMU_H
+#define GBEMU_H
 
 #include "common.h"
+
+#ifndef MAC
+# define MT_RENDER //OpenGL mutli-threaded render is broken on macOS Mojave
+#endif
 
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "3rdparty/imgui.h"
@@ -12,7 +17,7 @@
 
 #define SCREEN_WIDTH 160
 #define SCREEN_HEIGHT 144
-#define SCREEN_SCALE 4
+#define DEFAULT_SCREEN_SCALE 4
 
 #define TILE_WIDTH  8
 #define TILE_HEIGHT  8
@@ -34,6 +39,9 @@
 
 #define MAX_SPRITE_HEIGHT  16
 #define MAX_SPRITE_WIDTH  8
+
+#define GENERAL_MEMORY_SIZE MB(50)
+#define FILE_MEMORY_SIZE MB(10)
 
 #define FRAME_SEQUENCER_PERIOD (CLOCK_SPEED_HZ/512)
 #define LENGTH_TIMER_PERIOD (512/256)
@@ -478,30 +486,72 @@ struct NotificationState {
     i64 numItemsQueued;
 };
 struct GameBoyDebug;
+
+
+#define NO_INPUT_MAPPING -1
 struct Input {
+    enum class Action {
+        Left = 0, Right, Up, Down,
+        A, B, Start, Select,
+
+        Rewind, DebuggerContinue, DebuggerStep, Mute,
+        Pause, Reset, ShowDebugger, ShowHomePath,
+        FullScreen, ShowControls,
+
+        NumActions
+    };
+    
 
     struct State {
-        bool left, right, up, down;
-        bool a, b, start, select;
-        
         //emu controls
-        bool saveState, restoreState;
+        bool saveState, restoreState, escapeFullScreen, enterPressed;
+        
+        bool actionsHit[(int)Action::NumActions];
+        
         int slotToRestoreOrSave;
-        bool rewindState;
-        bool toggleFullScreen;
-        bool escapeFullScreen;
-        bool showHomeDirectory;
         
         //analog stick controls
         i16 xAxis, yAxis;
 
         //debug controls
-        bool pause, reset, debugContinue, nextStep, debugOn, mute;
         i32 mouseX, mouseY;
     };
+    struct Mapping {
+        UTF32Character code;
+        Action action; 
+    };
+    struct MappingBucketNode {
+        Mapping *mapping;
+    };
+    
+    struct CodeToActionMap {
+        //TODO: keys and values in separate arrays?
+        Mapping *mappings;
+        Mapping *buckets[64];
+    };
+    
     State newState;
     State oldState;
+    
+    CodeToActionMap keysMap;
+    CodeToActionMap ctrlKeysMap;
+    CodeToActionMap gamepadMap;
+
+    //debug controls
 };
+static const char *inputActionToStr[] = {
+    "Left", "Right", "Up", "Down",
+    "A", "B", "Start", "Select",
+
+    "Rewind", "DebuggerContinue", "DebuggerStep", "Mute",
+    "Pause", "Reset", "ShowDebugger", "ShowHomePath",
+    "FullScreen",
+
+    "NumActions"
+};
+
+void registerInputMapping(int inputCode, Input::Action action, Input::CodeToActionMap *mappings);
+bool retrieveActionForInputCode(int inputCode, Input::Action *outAction, Input::CodeToActionMap *mappings);
 
 struct ProgramState {
     char loadedROMName[MAX_ROM_NAME_LEN + 1];
@@ -518,21 +568,27 @@ struct ProgramState {
     bool shouldUpdateTitleBar;
     MemoryStack fileMemory;
     void *guiContext; 
+    
+    int screenScale;
 };
-static inline u8
-lb(u16 word) {
+inline u8 lb(u16 word) {
     return (u8)(word & 0xFF);
 }
 
-static inline u8
-hb(u16 word) {
+inline u8 hb(u16 word) {
     return (u8)((word >> 8) & 0xFF);
 }
 
-static inline u16
-word(u8 h, u8 l) {
+inline u16 word(u8 h, u8 l) {
     u16 ret = (u16)((u16)h << 8) | (u16)l;
     return ret;
+}
+
+inline bool isActionDown(Input::Action action, const Input *input) {
+   return input->newState.actionsHit[(int)action];
+}
+inline bool isActionPressed(Input::Action action, const Input *input) {
+   return input->newState.actionsHit[(int)action] && !input->oldState.actionsHit[(int)action];
 }
 
 bool pushNotification(const char *notification, int len, NotificationState *buffer);
@@ -557,16 +613,58 @@ void reset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState
 
 #define NOTIFY(buffer, fmt, ...) do {\
     char *str = nullptr;\
-    buf_printf(str, fmt, ##__VA_ARGS__);\
+    buf_gen_memory_printf(str, fmt, ##__VA_ARGS__);\
     pushNotification(str, stringLength(str) + 1, buffer);\
-    buf_free(str);\
+    buf_gen_memory_free(str);\
     } while (0)
 
 
+#endif
 //shared implementation (to be moved into gbemu.cpp once we get rid of dynamic linking)
 
-#ifdef CO_IMPL
 
+#ifdef GB_IMPL
+#undef GB_IMPL
+void registerInputMapping(int inputCode, Input::Action action, Input::CodeToActionMap *mappings) {
+    u64 index = hashU64((u64)inputCode) & (ARRAY_LEN(mappings->buckets) - 1);
+    Input::Mapping mapping;
+    mapping.code = inputCode;
+    mapping.action = action;
+    
+    Input::Mapping *bucket = mappings->buckets[index];
+    //modify existing
+    foribuf (bucket) {
+        if (inputCode == bucket[i].code) {
+            bucket[i].action = action;
+            foribuf (mappings->mappings) {
+                if (inputCode == bucket[i].code) {
+                    bucket[i].action = action;
+                }
+            }
+            return;
+        }
+    }
+
+    buf_malloc_push(mappings->mappings, mapping);
+    buf_malloc_push(bucket, mapping);
+    mappings->buckets[index] = bucket;
+}
+bool retrieveActionForInputCode(int inputCode, Input::Action *outAction, Input::CodeToActionMap *mappings) {
+    u64 index = hashU64((u64)inputCode) & (ARRAY_LEN(mappings->buckets) - 1);
+    Input::Mapping *bucket = mappings->buckets[index];
+    if (bucket) {
+        foribuf (bucket) {
+           if (bucket[i].code == inputCode) {
+               if (outAction) {
+                   *outAction = bucket[i].action;
+               }
+               return true;
+           }
+        }
+    }
+    
+    return false;
+}
 bool pushNotification(const char *notification, int len, NotificationState *buffer) {
 
     if (buffer->numItemsQueued < MAX_NOTIFICATIONS) {
