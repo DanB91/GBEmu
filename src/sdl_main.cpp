@@ -22,6 +22,9 @@
 #include "debugger.h"
 #include "3rdparty/gl3w.c"
 #include "config.cpp"
+#if defined(LINUX) || defined(WINDOWS)
+#   include "sdl_debugger.cpp"
+#endif
 
 #ifdef WINDOWS
 #include <io.h>
@@ -63,6 +66,11 @@
 #define ANALOG_STICK_DEADZONE 8000
 #define ANALOG_TRIGGER_DEADZONE 8000
     
+struct MetalPlatformState;
+void renderMainScreenMetal(SDL_Renderer *renderer, MetalPlatformState *platformState, 
+    const PaletteColor *screen, int windowW, int windowH);
+MetalPlatformState *initMainScreenMetal(SDL_Renderer *renderer);
+
 #ifdef MAC 
 #   define CTRL "Command-"
 #else
@@ -218,25 +226,6 @@ void runFrame(CPU *, MMU *, GameBoyDebug *gbDebug, ProgramState *, TimeUS dt);
 void reset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState);
 #endif
 
-struct DebuggerPlatformContext {
-    SDL_Window *window;
-    void *glContext;
-
-    GLuint shaderID, vertexShaderID, fragmentShaderID;
-    GLint attribLocationProjMtx, attribLocationPosition, attribLocationUV, attribLocationColor;
-    GLint attribLocationTex;
-    GLuint vboID, vaoID, elementsID;
-    GLuint fontTexture;
-    GameBoyDebug *gbDebug;
-#ifdef MT_RENDER
-    //render thread data
-    Thread *renderThread;
-    volatile bool isRunning;
-#endif
-    
-};
-
-
 enum class HomeDirectoryOption {
     DEFAULT = 0,
     CUSTOM,
@@ -389,379 +378,12 @@ static void processButton(int button, bool isDown, Input::State *input, Input::C
     }
 }
 
-static void
-closeDebugger(DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug) {
-#ifdef MT_RENDER
-    if (!debuggerContext->isRunning) {
-        return;
-    }
-    debuggerContext->isRunning = false;
-    if (gbDebug) {
-        gbDebug->shouldRender = true; 
-        broadcastCondition(gbDebug->renderCondition);
-    }
-    waitForAndFreeThread(debuggerContext->renderThread);
-#else
-    if (!gbDebug || !gbDebug->isEnabled) {
-        return;
-    }
-#endif
-    ImGui::DestroyContext();
 
-    if (debuggerContext->glContext) {
-        SDL_GL_DeleteContext(debuggerContext->glContext);
-    }
-    if (debuggerContext->window) {
-        SDL_DestroyWindow(debuggerContext->window);
-    }
-    if (gbDebug) {
-        gbDebug->isEnabled = false;
-    }
-
-    zeroMemory(debuggerContext, sizeof(*debuggerContext));
-
-}
-
-static void renderDebugger(GameBoyDebug *gbDebug, DebuggerPlatformContext *platformContext) {
-
-    SDL_GL_MakeCurrent(platformContext->window, platformContext->glContext);
-    glClearColor(1.0f, 0, 0, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    foriarr (gbDebug->tiles) {
-        auto tile = gbDebug->tiles[i];
-
-        //TODO: might have to do this update out of this thread
-        if (tile.needsUpdate) {
-            u32 pixels[TILE_HEIGHT * DEFAULT_SCREEN_SCALE * TILE_WIDTH * DEFAULT_SCREEN_SCALE];
-            for (i64 y = 0; y < TILE_HEIGHT * DEFAULT_SCREEN_SCALE; y+=DEFAULT_SCREEN_SCALE) {
-                for (i64 x = 0; x < TILE_WIDTH * DEFAULT_SCREEN_SCALE; x+=DEFAULT_SCREEN_SCALE) {
-                    u32 pixel;
-                    switch ((PaletteColor)tile.pixels[(y/DEFAULT_SCREEN_SCALE)*TILE_WIDTH + (x/DEFAULT_SCREEN_SCALE)]) {
-                    case PaletteColor::White: pixel = 0xFFFFFFFF; break;
-                    case PaletteColor::LightGray: pixel = 0xFFAAAAAA; break;
-                    case PaletteColor::DarkGray: pixel = 0xFF555555; break;
-                    case PaletteColor::Black: pixel = 0xFF000000; break;
-                    }
-
-                    for (i64 y2 = 0; y2 < DEFAULT_SCREEN_SCALE; y2++) {
-                        for (i64 x2 = 0; x2 < DEFAULT_SCREEN_SCALE; x2++) {
-                            pixels[((y+y2)*TILE_WIDTH*DEFAULT_SCREEN_SCALE) + (x + x2)] = pixel;
-                        }
-                    }
-
-                }
-            }
-            glBindTexture(GL_TEXTURE_2D, (GLuint)(u64)tile.textureID);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-            tile.needsUpdate = false;
-        }
-    }
-
-    auto drawData = ImGui::GetDrawData();
-    // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
-    ImGuiIO& io = ImGui::GetIO();
-    int fb_width = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
-    int fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
-    CO_ASSERT(fb_width != 0 && fb_height != 0);
-    drawData->ScaleClipRects(io.DisplayFramebufferScale);
-
-    // Backup GL state
-    GLint last_active_texture; glGetIntegerv(GL_ACTIVE_TEXTURE, &last_active_texture);
-    glActiveTexture(GL_TEXTURE0);
-    GLint last_program; glGetIntegerv(GL_CURRENT_PROGRAM, &last_program);
-    GLint last_texture; glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
-    GLint last_array_buffer; glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_array_buffer);
-    GLint last_element_array_buffer; glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &last_element_array_buffer);
-    GLint last_vertex_array; glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &last_vertex_array);
-    GLint last_blend_src_rgb; glGetIntegerv(GL_BLEND_SRC_RGB, &last_blend_src_rgb);
-    GLint last_blend_dst_rgb; glGetIntegerv(GL_BLEND_DST_RGB, &last_blend_dst_rgb);
-    GLint last_blend_src_alpha; glGetIntegerv(GL_BLEND_SRC_ALPHA, &last_blend_src_alpha);
-    GLint last_blend_dst_alpha; glGetIntegerv(GL_BLEND_DST_ALPHA, &last_blend_dst_alpha);
-    GLint last_blend_equation_rgb; glGetIntegerv(GL_BLEND_EQUATION_RGB, &last_blend_equation_rgb);
-    GLint last_blend_equation_alpha; glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &last_blend_equation_alpha);
-    GLint last_viewport[4]; glGetIntegerv(GL_VIEWPORT, last_viewport);
-    GLint last_scissor_box[4]; glGetIntegerv(GL_SCISSOR_BOX, last_scissor_box);
-    GLboolean last_enable_blend = glIsEnabled(GL_BLEND);
-    GLboolean last_enable_cull_face = glIsEnabled(GL_CULL_FACE);
-    GLboolean last_enable_depth_test = glIsEnabled(GL_DEPTH_TEST);
-    GLboolean last_enable_scissor_test = glIsEnabled(GL_SCISSOR_TEST);
-
-    // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled
-    glEnable(GL_BLEND);
-    glBlendEquation(GL_FUNC_ADD);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_SCISSOR_TEST);
-
-    // Setup viewport, orthographic projection matrix
-    glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
-    const float ortho_projection[4][4] =
-    {
-        { 2.0f/io.DisplaySize.x, 0.0f,                   0.0f, 0.0f },
-        { 0.0f,                  2.0f/-io.DisplaySize.y, 0.0f, 0.0f },
-        { 0.0f,                  0.0f,                  -1.0f, 0.0f },
-        {-1.0f,                  1.0f,                   0.0f, 1.0f },
-    };
-    glUseProgram(platformContext->shaderID);
-    glUniform1i(platformContext->attribLocationTex, 0);
-    glUniformMatrix4fv(platformContext->attribLocationProjMtx, 1, GL_FALSE, &ortho_projection[0][0]);
-    glBindVertexArray(platformContext->vaoID);
-
-    for (int n = 0; n < drawData->CmdListsCount; n++)
-    {
-        const ImDrawList* cmd_list = drawData->CmdLists[n];
-        const ImDrawIdx* idx_buffer_offset = 0;
-
-        glBindBuffer(GL_ARRAY_BUFFER, platformContext->vboID);
-        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->VtxBuffer.Size * (int)sizeof(ImDrawVert)), (const GLvoid*)cmd_list->VtxBuffer.Data, GL_STREAM_DRAW);
-
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, platformContext->elementsID);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(cmd_list->IdxBuffer.Size * (int)sizeof(ImDrawIdx)), (const GLvoid*)cmd_list->IdxBuffer.Data, GL_STREAM_DRAW);
-
-        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
-        {
-            const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-            if (pcmd->UserCallback)
-            {
-                pcmd->UserCallback(cmd_list, pcmd);
-            }
-            else
-            {
-                glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
-                glScissor((int)pcmd->ClipRect.x, (int)(fb_height - pcmd->ClipRect.w), (int)(pcmd->ClipRect.z - pcmd->ClipRect.x), (int)(pcmd->ClipRect.w - pcmd->ClipRect.y));
-                glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount, sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, idx_buffer_offset);
-            }
-            idx_buffer_offset += pcmd->ElemCount;
-        }
-    }
-
-    // Restore modified GL state
-    glUseProgram((GLuint)last_program);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)last_texture);
-    glActiveTexture((GLuint)last_active_texture);
-    glBindVertexArray((GLuint)last_vertex_array);
-    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)last_array_buffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)last_element_array_buffer);
-    glBlendEquationSeparate((GLuint)last_blend_equation_rgb, (GLuint)last_blend_equation_alpha);
-    glBlendFuncSeparate((GLuint)last_blend_src_rgb, (GLuint)last_blend_dst_rgb, (GLuint)last_blend_src_alpha, (GLuint)last_blend_dst_alpha);
-    if (last_enable_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-    if (last_enable_cull_face) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-    if (last_enable_depth_test) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-    if (last_enable_scissor_test) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
-    glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
-    glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
-
-
-    SDL_GL_SwapWindow(platformContext->window);
-    CO_ASSERT(glGetError() == GL_NO_ERROR);
-}
-
-#ifdef MT_RENDER
-static void renderDebuggerThread(void *arg) {
-    auto platformContext = (DebuggerPlatformContext*)arg;
-    auto gbDebug = platformContext->gbDebug;
-    while (platformContext->isRunning) {
-        lockMutex(gbDebug->debuggerMutex);
-        while (!gbDebug->shouldRender) {
-            waitForCondition(gbDebug->renderCondition, gbDebug->debuggerMutex);
-        }
-        gbDebug->shouldRender = false;
-        renderDebugger(gbDebug, platformContext);
-        unlockMutex(gbDebug->debuggerMutex);
-        
-    }
-}
-#endif
-
-static bool
-initDebugger(DebuggerPlatformContext *out, GameBoyDebug *gbDebug, ProgramState *programState, int mainScreenX, int mainScreenY) {
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-#ifdef MT_RENDER
-    SDL_GL_SetSwapInterval(1);
-#else 
-    SDL_GL_SetSwapInterval(0);
-#endif
-    
-    auto window = SDL_CreateWindow("Debugger", mainScreenX + 20, mainScreenY + 20,
-                                   DEBUG_WINDOW_MIN_WIDTH, DEBUG_WINDOW_MIN_HEIGHT, 
-                                   SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    if (!window) {
-        ALERT("Could not create debugger window. Reason %s", SDL_GetError());
-		return false;
-    }
-    
-    SDL_SetWindowMinimumSize(window, DEBUG_WINDOW_MIN_WIDTH, DEBUG_WINDOW_MIN_HEIGHT);
-
-    auto glContext = SDL_GL_CreateContext(window);
-    SDL_GL_MakeCurrent(window, glContext);
-    int initResult = gl3wInit();
-    if (initResult != 0) {
-		ALERT("Cannot init gl3w.  Error num: %d", initResult);
-		SDL_DestroyWindow(window);
-		return false;
-    } 
-
-
-    GLint last_texture, last_array_buffer, last_vertex_array;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_array_buffer);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &last_vertex_array);
-
-    const GLchar *vertex_shader =
-            "#version 330\n"
-            "uniform mat4 ProjMtx;\n"
-            "in vec2 Position;\n"
-            "in vec2 UV;\n"
-            "in vec4 Color;\n"
-            "out vec2 Frag_UV;\n"
-            "out vec4 Frag_Color;\n"
-            "void main()\n"
-            "{\n"
-            "	Frag_UV = UV;\n"
-            "	Frag_Color = Color;\n"
-            "	gl_Position = ProjMtx * vec4(Position.xy,0,1);\n"
-            "}\n";
-
-    const GLchar* fragment_shader =
-            "#version 330\n"
-            "uniform sampler2D Texture;\n"
-            "in vec2 Frag_UV;\n"
-            "in vec4 Frag_Color;\n"
-            "out vec4 Out_Color;\n"
-            "void main()\n"
-            "{\n"
-            "	Out_Color = Frag_Color * texture( Texture, Frag_UV.st);\n"
-            "}\n";
-
-    out->shaderID = glCreateProgram();
-    out->vertexShaderID = glCreateShader(GL_VERTEX_SHADER);
-    out->fragmentShaderID = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(out->vertexShaderID, 1, &vertex_shader, 0);
-    glShaderSource(out->fragmentShaderID, 1, &fragment_shader, 0);
-    glCompileShader(out->vertexShaderID);
-    glCompileShader(out->fragmentShaderID);
-    glAttachShader(out->shaderID, out->vertexShaderID);
-    glAttachShader(out->shaderID, out->fragmentShaderID);
-    glLinkProgram(out->shaderID);
-
-    out->attribLocationTex = glGetUniformLocation(out->shaderID, "Texture");
-    out->attribLocationProjMtx = glGetUniformLocation(out->shaderID, "ProjMtx");
-    out->attribLocationPosition = glGetAttribLocation(out->shaderID, "Position");
-    out->attribLocationUV = glGetAttribLocation(out->shaderID, "UV");
-    out->attribLocationColor = glGetAttribLocation(out->shaderID, "Color");
-
-    glGenBuffers(1, &out->vboID);
-    glGenBuffers(1, &out->elementsID);
-
-    glGenVertexArrays(1, &out->vaoID);
-    glBindVertexArray(out->vaoID);
-    glBindBuffer(GL_ARRAY_BUFFER, out->vboID);
-    glEnableVertexAttribArray((GLuint)out->attribLocationPosition);
-    glEnableVertexAttribArray((GLuint)out->attribLocationUV);
-    glEnableVertexAttribArray((GLuint)out->attribLocationColor);
-
-#define OFFSETOF(TYPE, ELEMENT) ((size_t)&(((TYPE *)0)->ELEMENT))
-    glVertexAttribPointer((GLuint)out->attribLocationPosition, 2, GL_FLOAT, GL_FALSE, sizeof(ImDrawVert), (GLvoid*)OFFSETOF(ImDrawVert, pos));
-    glVertexAttribPointer((GLuint)out->attribLocationUV, 2, GL_FLOAT, GL_FALSE, sizeof(ImDrawVert), (GLvoid*)OFFSETOF(ImDrawVert, uv));
-    glVertexAttribPointer((GLuint)out->attribLocationColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(ImDrawVert), (GLvoid*)OFFSETOF(ImDrawVert, col));
-#undef OFFSETOF
-
-    programState->guiContext = ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
-    io.DisplaySize.x = DEBUG_WINDOW_MIN_WIDTH;
-    io.DisplaySize.y = DEBUG_WINDOW_MIN_HEIGHT;
-    io.IniFilename = "layout.ini";
-    io.KeyMap[ImGuiKey_Tab] = SDLK_TAB;                     // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array.
-    io.KeyMap[ImGuiKey_LeftArrow] = SDL_SCANCODE_LEFT;
-    io.KeyMap[ImGuiKey_RightArrow] = SDL_SCANCODE_RIGHT;
-    io.KeyMap[ImGuiKey_UpArrow] = SDL_SCANCODE_UP;
-    io.KeyMap[ImGuiKey_DownArrow] = SDL_SCANCODE_DOWN;
-    io.KeyMap[ImGuiKey_PageUp] = SDL_SCANCODE_PAGEUP;
-    io.KeyMap[ImGuiKey_PageDown] = SDL_SCANCODE_PAGEDOWN;
-    io.KeyMap[ImGuiKey_Home] = SDL_SCANCODE_HOME;
-    io.KeyMap[ImGuiKey_End] = SDL_SCANCODE_END;
-    io.KeyMap[ImGuiKey_Delete] = SDLK_DELETE;
-    io.KeyMap[ImGuiKey_Backspace] = SDLK_BACKSPACE;
-    io.KeyMap[ImGuiKey_Enter] = SDLK_RETURN;
-    io.KeyMap[ImGuiKey_Escape] = SDLK_ESCAPE;
-    io.KeyMap[ImGuiKey_A] = SDLK_a;
-    io.KeyMap[ImGuiKey_C] = SDLK_c;
-    io.KeyMap[ImGuiKey_V] = SDLK_v;
-    io.KeyMap[ImGuiKey_X] = SDLK_x;
-    io.KeyMap[ImGuiKey_Y] = SDLK_y;
-    io.KeyMap[ImGuiKey_Z] = SDLK_z;
-    
-    gbDebug->nextTextPos = gbDebug->inputText;
-    *gbDebug->nextTextPos = '\0';
-
-    // Upload texture to graphics system
-    {
-        // Build texture atlas
-        unsigned char* pixels;
-        int width, height;
-        io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);   // Load as RGBA 32-bits for OpenGL3 demo because it is more likely to be compatible with user's existing shader.
-        glGenTextures(1, &out->fontTexture);
-        glBindTexture(GL_TEXTURE_2D, out->fontTexture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-        // Store our identifier
-        io.Fonts->TexID = (void *)(intptr_t)out->fontTexture;
-
-    }
-
-
-
-    // Restore modified GL state
-    glBindTexture(GL_TEXTURE_2D, (GLuint)last_texture);
-    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)last_array_buffer);
-    glBindVertexArray((GLuint)last_vertex_array);
-
-
-    out->window = window;
-    out->glContext = glContext;
-    foriarr (gbDebug->tiles) {
-        auto tile = &gbDebug->tiles[i];
-        GLuint textureID;
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        tile->textureID = (void*)textureID;
-        tile->needsUpdate = true;
-    }
-    out->gbDebug = gbDebug;
-    SDL_GL_MakeCurrent(out->window, nullptr);
-#ifdef MT_RENDER
-    out->isRunning = true;
-    if (!gbDebug->debuggerMutex) {
-        gbDebug->debuggerMutex = createMutex();
-    }
-    if (!gbDebug->renderCondition) {
-        gbDebug->renderCondition = createWaitCondition();
-    }
-    gbDebug->shouldRender = false;
-    
-    out->renderThread = startThread(renderDebuggerThread, out);
-#endif
-
-    return true;
-}
 
 static void
 cleanUp(CartRAMPlatformState *crps, DebuggerPlatformContext *debuggerContext) {
     closeMemoryMappedFile(crps->cartRAMFileHandle);
-    closeDebugger(debuggerContext, debuggerContext->gbDebug);
+    closeDebugger(debuggerContext);
 }
 
 //returns true succeeds. else false and program should exit
@@ -1257,9 +879,9 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
 }
 
 static void 
-mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
+mainLoop(SDL_Window *window, SDL_Renderer *renderer, MetalPlatformState *metalPlatformState, SDL_Texture *screenTexture,
          SDL_AudioDeviceID audioDeviceID, SDL_GameController **gamepad, const char *romFileName,
-         bool shouldEnableDebugMode, DebuggerPlatformContext *debuggerContext, GameBoyDebug *gbDebug, ProgramState *programState) {
+         bool shouldEnableDebugMode, DebuggerPlatformContext *debuggerContext, SDL_Window **debuggerWindow, GameBoyDebug *gbDebug, ProgramState *programState) {
     char filePath[MAX_PATH_LEN];
     
 #define GAME_LIB_PATH "gbemu.so"
@@ -1678,12 +1300,12 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                             cleanUp(&mmu->cartRAMPlatformState, debuggerContext);
                             return;
                         }
-                        else if (e.window.windowID == SDL_GetWindowID(debuggerContext->window)) {
-                            closeDebugger(debuggerContext, gbDebug);
+                        else if (e.window.windowID == SDL_GetWindowID(*debuggerWindow)) {
+                            closeDebugger(debuggerContext);
                         }
                     } break;
                     case SDL_WINDOWEVENT_RESIZED: { 
-                        if (e.window.windowID == SDL_GetWindowID(debuggerContext->window)) {
+                        if (e.window.windowID == SDL_GetWindowID(*debuggerWindow)) {
                             auto &io = ImGui::GetIO(); 
                             io.DisplaySize.x = e.window.data1;
                             io.DisplaySize.y = e.window.data2;
@@ -1851,7 +1473,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
             if (isActionPressed(Input::Action::ShowDebugger, input) && !gbDebug->isEnabled && !programState->isFullScreen) {
                 int windowX, windowY;
                 SDL_GetWindowPosition(window, &windowX, &windowY);
-                if (initDebugger(debuggerContext, gbDebug, programState, windowX, windowY)) {
+                if ((debuggerContext = initDebugger(gbDebug, programState, debuggerWindow, windowX, windowY))) {
                     gbDebug->isEnabled = true;
                 }
             }
@@ -1892,18 +1514,19 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         dt = now - startTime;
         startTime = now;
         if (gbDebug->isEnabled) {
-            if (!debuggerContext->window) {
-                int windowX, windowY;
-                SDL_GetWindowPosition(window, &windowX, &windowY);
-                initDebugger(debuggerContext, gbDebug, programState, windowX, windowY);
-            }
+            //TODO: Why do we have this?
+//            if (!debuggerContext->window) {
+//                int windowX, windowY;
+//                SDL_GetWindowPosition(window, &windowX, &windowY);
+//                initDebugger(debuggerContext, gbDebug, programState, windowX, windowY);
+//            }
 
             SDL_GetMouseState(&gbDebug->mouseX, &gbDebug->mouseY);
 
             // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
 
             gbDebug->isWindowInFocus =
-                    SDL_GetWindowFlags(debuggerContext->window) & SDL_WINDOW_MOUSE_FOCUS;
+                    SDL_GetWindowFlags(*debuggerWindow) & SDL_WINDOW_MOUSE_FOCUS;
 
 
             input->newState.mouseX = gbDebug->mouseX;
@@ -1913,6 +1536,33 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
         }
 
         profileStart("run frame", profileState);
+        if (gbDebug->isEnabled) {
+            auto &io = ImGui::GetIO();
+            io.DeltaTime = (float)(dt / 1000000.);
+            io.KeysDown[gbDebug->key] = gbDebug->isKeyDown;
+            io.KeyShift = gbDebug->isShiftDown;
+            io.KeyCtrl = gbDebug->isCtrlDown;
+            io.KeyAlt = gbDebug->isAltDown;
+            io.KeySuper = gbDebug->isSuperDown;
+            fori (3) {
+                io.MouseDown[i] = gbDebug->mouseDownState[i]; 
+            }
+
+            // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
+
+            io.MouseWheel = gbDebug->mouseScrollY;
+            gbDebug->mouseScrollY = 0;
+
+            io.MousePos.x = gbDebug->mouseX;
+            io.MousePos.y = gbDebug->mouseY;
+
+            if (gbDebug->inputText[0]) {
+                io.AddInputCharactersUTF8(gbDebug->inputText);
+                gbDebug->nextTextPos = gbDebug->inputText;
+                *gbDebug->nextTextPos = '\0';
+            }
+            newDebuggerFrame(debuggerContext);
+        }
         if(!isPaused) {
 #ifdef CO_DEBUG
             gbEmuCode.runFrame(cpu, mmu, gbDebug, programState, dt);
@@ -1921,6 +1571,10 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
 #endif
         }
         profileEnd(profileState);
+        
+        if (gbDebug->isEnabled) {
+            signalRenderDebugger(debuggerContext);
+        }
 
         /***************
          * Play Audio
@@ -1962,6 +1616,13 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
 
             profileStart("Draw Screen", profileState);
             if (lcd->isEnabled) {
+#ifdef MAC
+                UNUSED(screenTexture);
+                int w,h;
+                SDL_GetWindowSize(window, &w, &h);
+                renderMainScreenMetal(renderer, metalPlatformState, lcd->screen, w, h);
+#else
+                
                 u32 *screenPixels;
                 int pitch;
                 SDL_LockTexture(screenTexture, nullptr, (void**)&screenPixels, &pitch);
@@ -1976,16 +1637,12 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, SDL_Texture *screenTexture,
                 SDL_UpdateTexture(screenTexture, nullptr, screenPixels, pitch);
                 SDL_UnlockTexture(screenTexture);
                 SDL_RenderCopy(renderer, screenTexture, nullptr, nullptr);
+#endif
             }
             profileEnd(profileState);
             profileStart("Flip to screen", profileState);
             SDL_RenderPresent(renderer);
             profileEnd(profileState);
-#ifndef MT_RENDER
-            if (gbDebug->isEnabled) {
-                renderDebugger(gbDebug, debuggerContext);
-            }
-#endif
         }
 
         //draw notifications and new title
@@ -2066,6 +1723,7 @@ int main(int argc, char **argv) {
     SDL_AudioDeviceID audioDeviceID = 0;
     SDL_GameController *gamepad = nullptr;
 	ProgramState *programState;
+    MetalPlatformState *metalPlatformState = nullptr; //only for mac
     char *romsDir = nullptr;
     const char *openDialogPath = nullptr;
     const char *gbEmuHomePath; 
@@ -2253,14 +1911,18 @@ int main(int argc, char **argv) {
         ALERT("Could not create window. Reason %s", SDL_GetError());
         goto exit;
     }
-#ifdef MT_RENDER
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC  );
+#ifndef MAC
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
 #else
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (!SDL_SetHint(SDL_HINT_RENDER_DRIVER, "metal")) {
+        ALERT_EXIT("Could not init renderer. Reason: could not use Metal renderer.");
+        goto exit;
+    }
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 #endif
 
     if (!renderer) {
-        ALERT("Could not init renderer. Reason %s", SDL_GetError());
+        ALERT_EXIT("Could not init renderer. Reason %s", SDL_GetError());
         goto exit;
     }
     
@@ -2283,6 +1945,7 @@ int main(int argc, char **argv) {
         SDL_GetWindowSize(window, &windowW, &windowH);
         
         if (windowW > displayW || windowH > displayH) {
+            //TODO: handle with metal
             SDL_DestroyRenderer(renderer);
             SDL_DestroyWindow(window);
             int originalScreenScale = programState->screenScale;
@@ -2310,6 +1973,13 @@ int main(int argc, char **argv) {
         }
     }
 
+#ifdef MAC
+    metalPlatformState = initMainScreenMetal(renderer);
+    
+    if (!metalPlatformState) {
+        goto exit;
+    }
+#else
     screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, 
                                       SCREEN_WIDTH, SCREEN_HEIGHT);
     
@@ -2317,6 +1987,7 @@ int main(int argc, char **argv) {
         ALERT("Could not create screen. Reason %s", SDL_GetError());
         goto exit;
     }
+#endif
 
     zeroMemory(&as, sizeof(as));
     as.freq = AUDIO_SAMPLE_RATE;
@@ -2336,19 +2007,20 @@ int main(int argc, char **argv) {
 
 
     {
-        auto debuggerContext = PUSHMCLR(1, DebuggerPlatformContext);
+        SDL_Window *debuggerWindow = nullptr;
+        DebuggerPlatformContext *debuggerContext = nullptr;
         auto gbDebug = PUSHMCLR(1, GameBoyDebug);
         AutoMemory _am1(debuggerContext), _am2(gbDebug);
         if (shouldEnableDebugMode) {
             int windowX, windowY;
             SDL_GetWindowPosition(window, &windowX, &windowY);
-            if (!initDebugger(debuggerContext, gbDebug, programState, windowX, windowY)) {
-                CO_ERR("Could not init debugger!");
+            if (!(debuggerContext = initDebugger(gbDebug, programState, &debuggerWindow, windowX, windowY))) {
+                ALERT("Could not init debugger!");
                 goto exit;
             }
         }
 
-        mainLoop(window, renderer, screenTexture, audioDeviceID, &gamepad, romFileName, shouldEnableDebugMode, debuggerContext, gbDebug, programState);
+        mainLoop(window, renderer, metalPlatformState, screenTexture, audioDeviceID, &gamepad, romFileName, shouldEnableDebugMode, debuggerContext, &debuggerWindow, gbDebug, programState);
         
     }
 
@@ -2370,6 +2042,15 @@ exit:
 
 
 //Platform specific
+#ifndef MAC
+void renderMetal(SDL_Renderer *renderer, MetalPlatformState *platformState, const PaletteColor *screen,
+    int w, int h) {
+    //do nothing
+}
+MetalPlatformState *initMetal(SDL_Renderer *renderer) {
+    return nullptr;
+}
+#endif
 #ifdef WINDOWS 
 bool openFileDialogAtPath(const char *path, char *outPath) {
 	OPENFILENAMEW dialog = {};

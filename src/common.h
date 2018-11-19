@@ -257,6 +257,7 @@ inline i64 intPow(i64 base, i64 exp) {
 #define ZEROM(mem, n, type) zeroMemory(mem, (n) * (isize)sizeof(type))
 
 #define CO_MALLOC(n, type) (type*)chkMalloc((n)*sizeof(type))
+#define CO_CALLOC(n, type) (type*)chkCalloc((n), sizeof(type))
 #define CO_FREE(ptr) free(ptr)
 
 
@@ -328,8 +329,9 @@ void *resizeMemory(u8* memoryToResize, MemoryStack* stack, isize newSize);
 void resetStack(MemoryStack* stack, bool clearToZero);
 isize getAmountOfMemoryLeft(MemoryStack *stack);
 
-void *chkMalloc(size_t numBytes);
-void *chkRealloc(void *ptr, size_t numBytes);
+void *chkMalloc(usize numBytes);
+void *chkCalloc(usize n, usize numBytes);
+void *chkRealloc(void *ptr, usize numBytes);
 
 void copyMemory(const void* src, void* dest, i64 lenInBytes);
 bool areStringsEqual(const char *lhs, const char *rhs, i64 lenInBytes);
@@ -940,6 +942,14 @@ void *chkRealloc(void *ptr, size_t numBytes) {
 }
 void *chkMalloc(size_t numBytes) {
     void *ret = malloc(numBytes);
+    if (!ret) {
+        ALERT_EXIT("Ran out of memory trying to malloc %zu bytes!", numBytes);
+        exit(1);
+    }
+    return ret;
+}
+void *chkCalloc(size_t n, size_t numBytes) {
+    void *ret = calloc(n, numBytes);
     if (!ret) {
         ALERT_EXIT("Ran out of memory trying to malloc %zu bytes!", numBytes);
         exit(1);

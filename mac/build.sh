@@ -38,6 +38,7 @@ build_gbemu() {
         mkdir -p $APP_DIR/Contents/Resources
         make $1 && cp build/gbemu $APP_DIR/Contents/MacOS && 
             cp resources/Info.plist $APP_DIR/Contents/ &&
+            cp build/default.metallib $APP_DIR/Contents/Resources &&
             sed -i .bak -e "s/@GBEmuVersion@/$version/g" $APP_DIR/Contents/Info.plist &&
             rm $APP_DIR/Contents/Info.plist.bak &&
             cp resources/GBEmuIcon.icns $APP_DIR/Contents/Resources &&
