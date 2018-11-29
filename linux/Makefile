@@ -17,6 +17,9 @@ CPPFLAGS= -fno-exceptions -Wall -Wextra  -std=c++11  -Wconversion -isystem inclu
 LDFLAGS += -lGL -lpthread $(shell pkg-config --libs gtk+-3.0) -lsndio lib/libSDL2.a 
 CTIME = ./ctime_linux
 
+first:
+	@echo 'Please use the build.sh script to build gbemu.'
+
 profile: CPPFLAGS+=-O2 -DCO_PROFILE -g 
 profile: ctime_begin generate_version build build/gbemu_release ctime_end
 

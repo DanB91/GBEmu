@@ -66,10 +66,15 @@
 #define ANALOG_STICK_DEADZONE 8000
 #define ANALOG_TRIGGER_DEADZONE 8000
     
-struct MetalPlatformState;
-void renderMainScreenMetal(SDL_Renderer *renderer, MetalPlatformState *platformState, 
+struct LinuxAndWindowsPlatformState : PlatformState{
+    SDL_Rect textureRect;
+    SDL_Texture *screenTexture;
+};
+void renderMainScreen(SDL_Renderer *renderer, PlatformState *platformState, 
     const PaletteColor *screen, int windowW, int windowH);
-MetalPlatformState *initMainScreenMetal(SDL_Renderer *renderer);
+PlatformState *initPlatformState(SDL_Renderer *renderer, int windowW, int windowH);
+void windowResized(int w, int h, PlatformState *platformState);
+bool setFullScreen(SDL_Window *window, bool isFullScreen);
 
 #ifdef MAC 
 #   define CTRL "Command-"
@@ -383,7 +388,9 @@ static void processButton(int button, bool isDown, Input::State *input, Input::C
 static void
 cleanUp(CartRAMPlatformState *crps, DebuggerPlatformContext *debuggerContext) {
     closeMemoryMappedFile(crps->cartRAMFileHandle);
-    closeDebugger(debuggerContext);
+    if (debuggerContext) {
+        closeDebugger(debuggerContext);
+    }
 }
 
 //returns true succeeds. else false and program should exit
@@ -879,13 +886,13 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
 }
 
 static void 
-mainLoop(SDL_Window *window, SDL_Renderer *renderer, MetalPlatformState *metalPlatformState, SDL_Texture *screenTexture,
+mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformState,
          SDL_AudioDeviceID audioDeviceID, SDL_GameController **gamepad, const char *romFileName,
          bool shouldEnableDebugMode, DebuggerPlatformContext *debuggerContext, SDL_Window **debuggerWindow, GameBoyDebug *gbDebug, ProgramState *programState) {
     char filePath[MAX_PATH_LEN];
     
 #define GAME_LIB_PATH "gbemu.so"
-    char gbemuCodePath[MAX_PATH_LEN];
+    char gbemuCodePath[MAX_PATH_LEN + 1];
     //used for hot loading
     getCurrentWorkingDirectory(gbemuCodePath);
     strncat(gbemuCodePath, FILE_SEPARATOR GAME_LIB_PATH, MAX_PATH_LEN);
@@ -1219,11 +1226,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, MetalPlatformState *metalPl
     
     //Sound init
     SoundState *platformSoundState = &programState->soundState;
-    platformSoundState->buffer.len = (AUDIO_SAMPLE_RATE / 10); //100 ms
     platformSoundState->volume = 50;
-    platformSoundState->buffer.data = PUSHM(platformSoundState->buffer.len, SoundFrame);
-
-    fillMemory((i16*)platformSoundState->buffer.data, SHRT_MIN, platformSoundState->buffer.len * (i64)(sizeof(i16) * 2));
 
     {
 #define GB_SAMPLES_PER_SEC 4194304/60
@@ -1309,6 +1312,10 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, MetalPlatformState *metalPl
                             auto &io = ImGui::GetIO(); 
                             io.DisplaySize.x = e.window.data1;
                             io.DisplaySize.y = e.window.data2;
+                        }
+                        else if (e.window.windowID == SDL_GetWindowID(window)) {
+                            
+                            windowResized(e.window.data1, e.window.data2, platformState);
                         }
 
                     } break;
@@ -1481,32 +1488,15 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, MetalPlatformState *metalPl
                 showInputMapDialog(window, &input->keysMap, &input->ctrlKeysMap, &input->gamepadMap);
             }
             if (isActionPressed(Input::Action::FullScreen, input)) {
-                if (programState->isFullScreen) {
-                    if (SDL_SetWindowFullscreen(window, 0) == 0) {
-                        SDL_ShowCursor(true);
-                        programState->isFullScreen = false;
-                    }
-                    else {
-                        CO_ERR("Could not go to windowed mode! Reason: %s", SDL_GetError());
-                    }
-                }
-                else {
-                    if (SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN) == 0) {
-                        programState->isFullScreen = true;
-                        SDL_ShowCursor(false);
-                    }
-                    else {
-                        CO_ERR("Could not go full screen! Reason: %s", SDL_GetError());
-                    }
+                if (setFullScreen(window, !programState->isFullScreen)) {
+                    SDL_ShowCursor(programState->isFullScreen);
+                    programState->isFullScreen = !programState->isFullScreen;
                 }
             }
             if (input->newState.escapeFullScreen && !input->oldState.escapeFullScreen && programState->isFullScreen) {
-                if (SDL_SetWindowFullscreen(window, 0) == 0) {
+                if (setFullScreen(window, false)) {
                     programState->isFullScreen = false;
                     SDL_ShowCursor(true);
-                }
-                else {
-                    CO_ERR("Could not go to windowed mode! Reason: %s", SDL_GetError());
                 }
             }
         }
@@ -1579,10 +1569,10 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, MetalPlatformState *metalPl
         /***************
          * Play Audio
          **************/
-        {
+        if (mmu->soundFramesBuffer.numItemsQueued > 0) {
 #define MAX_FRAMES_TO_PLAY 1000
 #define VOLUME_AMPLIFIER 4
-            SoundFrame *framesToPlay = PUSHM(platformSoundState->buffer.numItemsQueued, SoundFrame);
+            SoundFrame *framesToPlay = PUSHM(mmu->soundFramesBuffer.numItemsQueued, SoundFrame);
             AutoMemory _am(framesToPlay);
 
             u32 numFramesToQueue = (u32)popn(mmu->soundFramesBuffer.numItemsQueued, &mmu->soundFramesBuffer, framesToPlay);
@@ -1616,28 +1606,10 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, MetalPlatformState *metalPl
 
             profileStart("Draw Screen", profileState);
             if (lcd->isEnabled) {
-#ifdef MAC
-                UNUSED(screenTexture);
                 int w,h;
                 SDL_GetWindowSize(window, &w, &h);
-                renderMainScreenMetal(renderer, metalPlatformState, lcd->screen, w, h);
-#else
+                renderMainScreen(renderer, platformState, lcd->screen, w, h);
                 
-                u32 *screenPixels;
-                int pitch;
-                SDL_LockTexture(screenTexture, nullptr, (void**)&screenPixels, &pitch);
-                fori (SCREEN_HEIGHT*SCREEN_WIDTH) {
-                    switch ((PaletteColor)lcd->screen[i]) {
-                    case PaletteColor::White: screenPixels[i] = 0xFFFFFFFF; break;
-                    case PaletteColor::LightGray: screenPixels[i] = 0xFFAAAAAA; break;
-                    case PaletteColor::DarkGray: screenPixels[i] = 0xFF555555; break;
-                    case PaletteColor::Black: screenPixels[i] = 0xFF000000; break;
-                    }
-                }
-                SDL_UpdateTexture(screenTexture, nullptr, screenPixels, pitch);
-                SDL_UnlockTexture(screenTexture);
-                SDL_RenderCopy(renderer, screenTexture, nullptr, nullptr);
-#endif
             }
             profileEnd(profileState);
             profileStart("Flip to screen", profileState);
@@ -1718,12 +1690,11 @@ int main(int argc, char **argv) {
     
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
-    SDL_Texture *screenTexture = nullptr;
     SDL_AudioSpec as;
     SDL_AudioDeviceID audioDeviceID = 0;
     SDL_GameController *gamepad = nullptr;
 	ProgramState *programState;
-    MetalPlatformState *metalPlatformState = nullptr; //only for mac
+    PlatformState *platformState = nullptr; //only for mac
     char *romsDir = nullptr;
     const char *openDialogPath = nullptr;
     const char *gbEmuHomePath; 
@@ -1905,21 +1876,20 @@ int main(int argc, char **argv) {
     buf_gen_memory_free(romsDir);
 
     window = SDL_CreateWindow("GBEmu", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                             SCREEN_WIDTH*programState->screenScale, SCREEN_HEIGHT*programState->screenScale, SDL_WINDOW_SHOWN);
+                             SCREEN_WIDTH*programState->screenScale, SCREEN_HEIGHT*programState->screenScale, 
+                              SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 
     if (!window) {
         ALERT("Could not create window. Reason %s", SDL_GetError());
         goto exit;
     }
-#ifndef MAC
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
-#else
+#ifdef MAC
     if (!SDL_SetHint(SDL_HINT_RENDER_DRIVER, "metal")) {
         ALERT_EXIT("Could not init renderer. Reason: could not use Metal renderer.");
         goto exit;
     }
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 #endif
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     if (!renderer) {
         ALERT_EXIT("Could not init renderer. Reason %s", SDL_GetError());
@@ -1973,22 +1943,15 @@ int main(int argc, char **argv) {
         }
     }
 
-#ifdef MAC
-    metalPlatformState = initMainScreenMetal(renderer);
-    
-    if (!metalPlatformState) {
-        goto exit;
-    }
-#else
-    screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, 
-                                      SCREEN_WIDTH, SCREEN_HEIGHT);
-    
-    if (!screenTexture) {
-        ALERT("Could not create screen. Reason %s", SDL_GetError());
-        goto exit;
-    }
-#endif
+    {
+        int w,h;
+        SDL_GetWindowSize(window, &w, &h);
+        platformState = initPlatformState(renderer, w, h);
 
+        if (!platformState) {
+            goto exit;
+        }
+    }
     zeroMemory(&as, sizeof(as));
     as.freq = AUDIO_SAMPLE_RATE;
     as.format = AUDIO_S16LSB;
@@ -2020,7 +1983,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        mainLoop(window, renderer, metalPlatformState, screenTexture, audioDeviceID, &gamepad, romFileName, shouldEnableDebugMode, debuggerContext, &debuggerWindow, gbDebug, programState);
+        mainLoop(window, renderer, platformState, audioDeviceID, &gamepad, romFileName, shouldEnableDebugMode, debuggerContext, &debuggerWindow, gbDebug, programState);
         
     }
 
@@ -2042,14 +2005,60 @@ exit:
 
 
 //Platform specific
-#ifndef MAC
-void renderMetal(SDL_Renderer *renderer, MetalPlatformState *platformState, const PaletteColor *screen,
+#if defined(WINDOWS) || defined(LINUX)
+void renderMainScreen(SDL_Renderer *renderer, PlatformState *platformState, const PaletteColor *screen,
     int w, int h) {
-    //do nothing
+    UNUSED(w);
+    UNUSED(h);
+    LinuxAndWindowsPlatformState *ps = (LinuxAndWindowsPlatformState*)platformState;
+    SDL_Texture *screenTexture = ps->screenTexture;
+    u32 *screenPixels;
+    int pitch;
+    SDL_LockTexture(screenTexture, nullptr, (void**)&screenPixels, &pitch);
+    fori (SCREEN_HEIGHT*SCREEN_WIDTH) {
+        switch (screen[i]) {
+        case PaletteColor::White: screenPixels[i] = 0xFFFFFFFF; break;
+        case PaletteColor::LightGray: screenPixels[i] = 0xFFAAAAAA; break;
+        case PaletteColor::DarkGray: screenPixels[i] = 0xFF555555; break;
+        case PaletteColor::Black: screenPixels[i] = 0xFF000000; break;
+        }
+    }
+    SDL_UpdateTexture(screenTexture, nullptr, screenPixels, pitch);
+    SDL_UnlockTexture(screenTexture);
+    SDL_RenderCopy(renderer, screenTexture, nullptr, &ps->textureRect);
 }
-MetalPlatformState *initMetal(SDL_Renderer *renderer) {
-    return nullptr;
+
+PlatformState *initPlatformState(SDL_Renderer *renderer, int windowW, int windowH) {
+    LinuxAndWindowsPlatformState *ret = CO_MALLOC(1, LinuxAndWindowsPlatformState);
+    ret->screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, 
+                                      SCREEN_WIDTH, SCREEN_HEIGHT);
+	ret->textureRect = {0, 0, windowW, windowH};
+    
+    if (!ret->screenTexture) {
+        ALERT("Could not create screen. Reason %s", SDL_GetError());
+        return nullptr;
+    }
+    
+    return ret;
 }
+void windowResized(int w, int h, PlatformState *platformState) {
+    LinuxAndWindowsPlatformState *ps = (LinuxAndWindowsPlatformState*)platformState;
+    int ratio = MIN((w/SCREEN_WIDTH), (h/SCREEN_HEIGHT));
+    ps->textureRect.w = ratio * SCREEN_WIDTH;
+    ps->textureRect.h = ratio * SCREEN_HEIGHT;
+    ps->textureRect.x = (w - ps->textureRect.w) / 2;
+    ps->textureRect.y = (h - ps->textureRect.h) / 2;
+}
+bool setFullScreen(SDL_Window *window, bool isFullScreen) {
+    if (SDL_SetWindowFullscreen(window, isFullScreen) == 0) {
+        return true;
+    }
+    else {
+        CO_ERR("Could not set full screen to! Reason: %s", SDL_GetError());
+        return false;
+    }
+}
+
 #endif
 #ifdef WINDOWS 
 bool openFileDialogAtPath(const char *path, char *outPath) {

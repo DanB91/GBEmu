@@ -334,12 +334,8 @@ DebuggerPlatformContext *initDebugger(GameBoyDebug *gbDebug, ProgramState *progr
     ret->gbDebug = gbDebug;
     SDL_GL_MakeCurrent(ret->window, nullptr);
     ret->isRunning = true;
-    if (!ret->debuggerMutex) {
-        ret->debuggerMutex = createMutex();
-    }
-    if (!ret->renderCondition) {
-        ret->renderCondition = createWaitCondition();
-    }
+	ret->debuggerMutex = createMutex();
+	ret->renderCondition = createWaitCondition();
     ret->shouldRender = false;
     
     ret->renderThread = startThread(renderDebuggerThread, ret);
@@ -370,7 +366,8 @@ void closeDebugger(DebuggerPlatformContext *debuggerContext) {
     if (debuggerContext->gbDebug) {
         debuggerContext->gbDebug->isEnabled = false;
     }
-
+	destroyMutex(debuggerContext->debuggerMutex);
+	destroyWaitCondition(debuggerContext->renderCondition);
     zeroMemory(debuggerContext, sizeof(*debuggerContext));
 
 }

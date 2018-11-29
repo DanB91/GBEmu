@@ -12,14 +12,17 @@ PLATFORM_OBJ += build/imgui.o
 
 VERSION=$(shell cat ../version.txt)
 
-CPPFLAGS=-g -fno-exceptions -Wall -Wextra -Wno-nullability-completeness -std=c++11 -fobjc-arc -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -I/Library/Frameworks/SDL2.framework/Headers
+CPPFLAGS=-fno-exceptions -mmacosx-version-min=10.13 -Wall -Wextra -Wno-nullability-completeness -std=c++11 -fobjc-arc -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -I/Library/Frameworks/SDL2.framework/Headers
 METALFLAGS=
 CC=clang++
 
 CTIME = ./ctime_mac
 
-LDFLAGS += -framework OpenGL -framework CoreFoundation -framework AppKit -Fresources -framework SDL2 -framework Metal
-PLATFORM_OBJ += build/cocoa.o
+LDFLAGS += -framework CoreFoundation -framework AppKit -Fresources -framework SDL2 -framework Metal -lstdc++
+PLATFORM_OBJ += build/mac.o
+
+first:
+	@echo 'Please use the build.sh script to build gbemu.'
 
 profile: CPPFLAGS+=-O2 -DCO_PROFILE -DNDEBUG -g 
 profile: ctime_begin generate_version build build/gbemu_release ctime_end
@@ -29,7 +32,6 @@ release: ctime_begin  generate_version build build/gbemu_release ctime_end
 
 debug: CPPFLAGS+=-DCO_DEBUG -DCO_PROFILE -g
 debug: FPIC+=-fPIC
-debug: METALFLAGS+=-g -fdebug-info-for-profiling
 debug: ctime_begin generate_version build build/gbemu build/gbemu.so ctime_end
 
 test: build/test
@@ -46,7 +48,7 @@ build/imgui.o: ../src/3rdparty/imgui.cpp ../src/3rdparty/imgui.h ../src/3rdparty
 build/imgui-fpic.o: ../src/3rdparty/imgui.cpp ../src/3rdparty/imgui.h ../src/3rdparty/imconfig.h ../src/3rdparty/imgui_draw.cpp
 	$(CC) -c -o $@ $< $(CPPFLAGS) -fPIC
 
-build/cocoa.o: ../src/cocoa.mm 
+build/mac.o: ../src/mac.mm  FORCE
 	$(CC) -c -o $@ $< $(CPPFLAGS)
 
 build/default.metallib: ../src/shaders.metal

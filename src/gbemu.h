@@ -59,6 +59,10 @@
 
 #define NUM_SAVE_SLOTS 10
 
+struct PlatformState {
+//To be inherited from    
+};
+
 struct RTC;
 struct RTCFileState;
 
@@ -149,7 +153,6 @@ enum class JPButtonGroup : i32 {
 };
 
 struct SoundState {
-    SoundBuffer buffer;
     int volume; //0 to 100
     bool isMuted;
 };

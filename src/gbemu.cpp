@@ -2542,18 +2542,19 @@ static void drawScanLine(LCD *lcd) {
         
         fori (numSpritesToDraw) {
             auto sprite = &spritesToDraw[i];
+            u8 start = sprite->x < MAX_SPRITE_WIDTH ? 0 : sprite->x - MAX_SPRITE_WIDTH;
             u8 upperBound = (sprite->x < SCREEN_WIDTH) ? sprite->x : SCREEN_WIDTH;
-            forjrange (sprite->x - MAX_SPRITE_WIDTH, upperBound) {
+            forjrange (start, upperBound) {
                 u8 currPixelXPositionOnScreen = (u8)j;
                 u8 currYPositionOnScreen = lcd->ly;
                 
                 
                 u8 currXPositionInSprite = (sprite->x < MAX_SPRITE_WIDTH) ?
                     currPixelXPositionOnScreen + (MAX_SPRITE_WIDTH - sprite->x) :
-                currXPositionInSprite = currPixelXPositionOnScreen - (sprite->x - MAX_SPRITE_WIDTH); 
+                    currPixelXPositionOnScreen - (sprite->x - MAX_SPRITE_WIDTH); 
                 u8 currYPositionInSprite = (sprite->y < MAX_SPRITE_HEIGHT) ?
                     currYPositionOnScreen - (sprite->y - MAX_SPRITE_HEIGHT) : 
-                currYPositionOnScreen + (MAX_SPRITE_HEIGHT - sprite->y);
+                    currYPositionOnScreen + (MAX_SPRITE_HEIGHT - sprite->y);
                 
                 
                 if (sprite->isXFlipped) {
@@ -2605,7 +2606,6 @@ static void drawScanLine(LCD *lcd) {
                     continue;
                 }
                 
-                //TODO: have a pointer instead of accessing an array
                 scanLineToDraw[currPixelXPositionOnScreen] = 
                 {spritePaletteForNumber((SpritePalette)sprite->selectedSpritePalette, lcd), 
                     colorIDOfSpritePixel};
