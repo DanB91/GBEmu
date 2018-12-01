@@ -189,8 +189,6 @@ repeat:
         currentToken.stringValue.data = stream;
         int expectedNumBytes;
         switch (leadByte & 0xF0) {
-        case 0: expectedNumBytes = 1; 
-            break;
         case 0xC0: 
         case 0xD0: 
             expectedNumBytes = 2; 
@@ -200,7 +198,8 @@ repeat:
             break;
         case 0xF0: expectedNumBytes = 4;
             break;
-            //TODO: bad lead byte, should assign bad token type
+        default: expectedNumBytes = 1; 
+            break;
         }
         int byteLen = 0;
         int i;

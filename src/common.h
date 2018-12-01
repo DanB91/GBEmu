@@ -179,7 +179,10 @@ void waitForCondition(WaitCondition *, Mutex *);
 void broadcastCondition(WaitCondition *);
 void waitForAndFreeThread(Thread *);
 u64 currentThreadID();
-//TODO: put in clean up functions
+
+//clean up functions
+void destroyMutex(Mutex *);
+void destroyWaitCondition(WaitCondition *);
 
 
 //utilities
@@ -257,6 +260,7 @@ inline i64 intPow(i64 base, i64 exp) {
 #define ZEROM(mem, n, type) zeroMemory(mem, (n) * (isize)sizeof(type))
 
 #define CO_MALLOC(n, type) (type*)chkMalloc((n)*sizeof(type))
+#define CO_CALLOC(n, type) (type*)chkCalloc((n), sizeof(type))
 #define CO_FREE(ptr) free(ptr)
 
 
@@ -328,8 +332,9 @@ void *resizeMemory(u8* memoryToResize, MemoryStack* stack, isize newSize);
 void resetStack(MemoryStack* stack, bool clearToZero);
 isize getAmountOfMemoryLeft(MemoryStack *stack);
 
-void *chkMalloc(size_t numBytes);
-void *chkRealloc(void *ptr, size_t numBytes);
+void *chkMalloc(usize numBytes);
+void *chkCalloc(usize n, usize numBytes);
+void *chkRealloc(void *ptr, usize numBytes);
 
 void copyMemory(const void* src, void* dest, i64 lenInBytes);
 bool areStringsEqual(const char *lhs, const char *rhs, i64 lenInBytes);
@@ -400,6 +405,9 @@ struct BufHdr {
 #define buf_sizeof(b) ((b) ? buf_len(b)*sizeof(*b) : 0)
 
 
+#ifndef MIN
+#   define MIN(x,y) (((x) < (y)) ? (x) : (y))
+#endif
 #ifndef MAX
 #   define MAX(x,y) (((x) > (y)) ? (x) : (y))
 #endif
@@ -875,12 +883,11 @@ void *resizeMemory(u8 *memoryToResize, isize newSize) {
 void *pushMemory(MemoryStack* stack, isize size, bool clearToZero) {
     CO_ASSERT(stack->isInited);
     u8* ret = stack->nextFreeAddress;
-
     CO_ASSERT(stack->nextFreeAddress + size - stack->baseAddress <= 
             (i64)stack->maxSize);
     if (stack->nextFreeAddress + size - stack->baseAddress > 
             (i64)stack->maxSize) {
-        ALERT_EXIT("Ran out of memory trying to allocate %zu bytes!", size);
+        alertDialog("Ran out of bump allocator memory! Exiting...");
         exit(1);
     }
     
@@ -940,6 +947,14 @@ void *chkRealloc(void *ptr, size_t numBytes) {
 }
 void *chkMalloc(size_t numBytes) {
     void *ret = malloc(numBytes);
+    if (!ret) {
+        ALERT_EXIT("Ran out of memory trying to malloc %zu bytes!", numBytes);
+        exit(1);
+    }
+    return ret;
+}
+void *chkCalloc(size_t n, size_t numBytes) {
+    void *ret = calloc(n, numBytes);
     if (!ret) {
         ALERT_EXIT("Ran out of memory trying to malloc %zu bytes!", numBytes);
         exit(1);
@@ -1195,6 +1210,7 @@ Timer *startAsyncTimer(TimerFn *tf, void *arg, TimeMS time) {
 //threading
 struct Thread {
     pthread_t value;
+    _ThreadStartContext tsc;
 };
 struct Mutex {
     pthread_mutex_t value;
@@ -1207,16 +1223,14 @@ struct WaitCondition {
 static void *threadStart(void *param) {
 	auto threadStartContext = (_ThreadStartContext*) param; 
 	threadStartContext->fn(threadStartContext->parameter);
-	CO_FREE(threadStartContext);
 	return nullptr;
 }
 Thread *startThread(ThreadFn fn, void *arg)  {
-	_ThreadStartContext *tsc = CO_MALLOC(1, _ThreadStartContext);
     Thread *ret = CO_MALLOC(1, Thread);
                            
-	tsc->fn = fn;
-	tsc->parameter= arg;
-    int result = pthread_create(&ret->value, nullptr, threadStart, tsc);
+	ret->tsc.fn = fn;
+	ret->tsc.parameter= arg;
+    int result = pthread_create(&ret->value, nullptr, threadStart, &ret->tsc);
     UNUSED(result);
     CO_ASSERT_MSG(result == 0, "Failed to create thread!");
     
@@ -1275,17 +1289,25 @@ void waitForAndFreeThread(Thread *thread) {
 u64 currentThreadID() {
     return (u64)pthread_self();
 }
+void destroyMutex(Mutex *mutex) {
+    pthread_mutex_destroy(&mutex->value);
+    CO_FREE(mutex);
+}
+void destroyWaitCondition(WaitCondition *wc) {
+   pthread_cond_destroy(&wc->value);
+   CO_FREE(wc);
+}
 
 //memory
-
 bool initMemory(i64 totalMemoryLength, i64 generalMemoryLength) {
+   
    {
         totalMemoryLength += sizeof(MemoryContext) + sizeof(MemoryStack);
         CO_ASSERT(totalMemoryLength >= generalMemoryLength);
         MemoryContext tmpMC = {};
         tmpMC.size = (i64)totalMemoryLength;
 
-        u8* prgMemBlock = (u8*)mmap(nullptr, (u64)totalMemoryLength, PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+        u8* prgMemBlock = (u8*)mmap(nullptr, (u64)totalMemoryLength, PROT_READ|PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
 
         if (prgMemBlock == MAP_FAILED) {
             return false;
@@ -1656,6 +1678,7 @@ Timer *startAsyncTimer(TimerFn *tf, void *arg, TimeMS time) {
 //threading
 struct Thread {
     HANDLE value;
+	_ThreadStartContext tsc;
 };
 struct Mutex {
     CRITICAL_SECTION value;
@@ -1666,15 +1689,13 @@ struct WaitCondition {
 static DWORD threadStart(LPVOID param) {
 	auto threadStartContext = (_ThreadStartContext*) param; 
 	threadStartContext->fn(threadStartContext->parameter);
-	CO_FREE(threadStartContext);
 	return 0;
 }
 Thread *startThread(ThreadFn fn, void *arg)  {
-	_ThreadStartContext *tsc = CO_MALLOC(1, _ThreadStartContext);
     Thread *ret = CO_MALLOC(1, Thread);
-	tsc->fn = fn;
-	tsc->parameter= arg;
-	HANDLE result = CreateThread(nullptr, 0, threadStart, tsc, 0, nullptr);
+	ret->tsc.fn = fn;
+	ret->tsc.parameter= arg;
+	HANDLE result = CreateThread(nullptr, 0, threadStart, &ret->tsc, 0, nullptr);
 	CO_ASSERT_MSG(result, "Failed to create hread!");
     ret->value = result;
     return ret;
@@ -1686,6 +1707,13 @@ Mutex *createMutex() {
     Mutex *ret = CO_MALLOC(1, Mutex);
 	InitializeCriticalSection(&ret->value);
     return ret;
+}
+void destroyMutex(Mutex *mutex) {
+	DeleteCriticalSection(&mutex->value);
+	CO_FREE(mutex);
+}
+void destroyWaitCondition(WaitCondition *wc) {
+	CO_FREE(wc);
 }
 void lockMutex(Mutex *mutex) {
 	EnterCriticalSection(&mutex->value);

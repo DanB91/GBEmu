@@ -1,5 +1,5 @@
-_PLATFORM_SRC=sdl_main.cpp 
-_GAME_SRC=gbemu.cpp 
+_PLATFORM_SRC=sdl_main.cpp
+_GAME_SRC=gbemu.cpp
 
 GBEMU_VERSION:=$(shell cat ../version.txt)
 PLATFORM_SRC=$(patsubst %.cpp, ../src/%.cpp, $(_PLATFORM_SRC))
@@ -12,13 +12,17 @@ PLATFORM_OBJ += build/imgui.o
 
 VERSION=$(shell cat ../version.txt)
 
-CPPFLAGS=-g -mmacosx-version-min=10.13 -fno-exceptions -Wall -Wextra  -std=c++11  -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -I/Library/Frameworks/SDL2.framework/Headers
+CPPFLAGS=-fno-exceptions -mmacosx-version-min=10.13 -Wall -Wextra -Wno-nullability-completeness -std=c++11 -fobjc-arc -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -I/Library/Frameworks/SDL2.framework/Headers
+METALFLAGS=
 CC=clang++
 
 CTIME = ./ctime_mac
 
-LDFLAGS += -framework OpenGL -framework CoreFoundation -framework AppKit -Fresources -framework SDL2
-PLATFORM_OBJ += build/cocoa.o
+LDFLAGS += -framework CoreFoundation -framework AppKit -Fresources -framework SDL2 -framework Metal -lstdc++
+PLATFORM_OBJ += build/mac.o
+
+first:
+	@echo 'Please use the build.sh script to build gbemu.'
 
 profile: CPPFLAGS+=-O2 -DCO_PROFILE -DNDEBUG -g 
 profile: ctime_begin generate_version build build/gbemu_release ctime_end
@@ -44,10 +48,13 @@ build/imgui.o: ../src/3rdparty/imgui.cpp ../src/3rdparty/imgui.h ../src/3rdparty
 build/imgui-fpic.o: ../src/3rdparty/imgui.cpp ../src/3rdparty/imgui.h ../src/3rdparty/imconfig.h ../src/3rdparty/imgui_draw.cpp
 	$(CC) -c -o $@ $< $(CPPFLAGS) -fPIC
 
-build/cocoa.o: ../src/cocoa.mm
+build/mac.o: ../src/mac.mm  FORCE
 	$(CC) -c -o $@ $< $(CPPFLAGS)
 
-build/gbemu: $(PLATFORM_OBJ) FORCE 
+build/default.metallib: ../src/shaders.metal
+	xcrun --sdk macosx metal $(METALFLAGS) -o $@ $< 
+
+build/gbemu: $(PLATFORM_OBJ) build/default.metallib FORCE 
 	$(CC) $(PLATFORM_OBJ) $(LDFLAGS) -ldl  -o $@
 
 build/gbemu.so: $(GAME_OBJ) build/imgui-fpic.o FORCE
@@ -55,7 +62,7 @@ build/gbemu.so: $(GAME_OBJ) build/imgui-fpic.o FORCE
 	$(CC) $(GAME_OBJ) build/imgui-fpic.o -shared -fPIC -o $@
 	@rm build/soLock
 
-build/gbemu_release: $(PLATFORM_OBJ) 
+build/gbemu_release: $(PLATFORM_OBJ)  build/default.metallib
 	$(CC) $(PLATFORM_OBJ) $(LDFLAGS) -ldl -o $@
 	@mv $@ build/gbemu
 build/test: ../src/tests/unitTests.cpp FORCE

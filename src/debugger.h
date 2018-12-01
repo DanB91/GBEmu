@@ -2,6 +2,22 @@
 
 #pragma once
 #include "gbemu.h"
+
+#define DEBUG_WINDOW_MIN_HEIGHT 800
+#define DEBUG_WINDOW_MIN_WIDTH 800
+constexpr int SCALED_TILE_HEIGHT = TILE_HEIGHT * DEFAULT_SCREEN_SCALE;
+constexpr int SCALED_TILE_WIDTH = TILE_WIDTH * DEFAULT_SCREEN_SCALE;
+
+
+struct DebuggerPlatformContext;
+struct SDL_Window;
+
+DebuggerPlatformContext *initDebugger(GameBoyDebug *gbDebug, ProgramState *programState, SDL_Window **outDebuggerWindow, 
+                                      int mainScreenX, int mainScreenY);
+void closeDebugger(DebuggerPlatformContext *debuggerContext);
+void signalRenderDebugger(DebuggerPlatformContext *platformContext);
+void newDebuggerFrame(DebuggerPlatformContext *platformContext);
+
 enum class BreakpointOP {
   Equal, LessThan, GreaterThan
 };
@@ -88,12 +104,6 @@ struct GameBoyDebug {
     }; 
     Tile tiles[0x200]; 
     
-#ifdef MT_RENDER
-    Mutex *debuggerMutex;
-    volatile bool shouldRender;
-    WaitCondition *renderCondition;
-#endif
-    
     //Input
     char inputText[32]; //32 is based on SDL
     char *nextTextPos;
@@ -109,7 +119,6 @@ struct GameBoyDebug {
     int mouseScrollY;
     bool mouseDownState[3];
     bool isWindowInFocus;
-    
 };
 Breakpoint *hardwareBreakpointForAddress(u16 address, BreakpointExpectedValueType expectedValueType, GameBoyDebug *gbDebug);
 void continueFromBreakPoint(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState);

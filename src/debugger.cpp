@@ -872,10 +872,6 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
          * ImGui/Debug window Code
          *************************/
 
-    if (!gbDebug->isEnabled) {
-        return;
-    }
-    profileStart("Draw Debug window", profileState);
     if (cpu->isPaused && !gbDebug->wasCPUPaused) {
         gbDebug->wasCPUPaused = true;
         gbDebug->shouldRefreshDisassembler = true;
@@ -884,38 +880,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         gbDebug->wasCPUPaused = false;
     }
 
-#ifdef MT_RENDER
-    lockMutex(gbDebug->debuggerMutex);
-#endif
     ImGui::SetCurrentContext((ImGuiContext*)programState->guiContext);
-
-    /* ImGui  input code  */
-    auto &io = ImGui::GetIO();
-    io.DeltaTime = (float)(dt / 1000000.);
-
-    io.KeysDown[gbDebug->key] = gbDebug->isKeyDown;
-    io.KeyShift = gbDebug->isShiftDown;
-    io.KeyCtrl = gbDebug->isCtrlDown;
-    io.KeyAlt = gbDebug->isAltDown;
-    io.KeySuper = gbDebug->isSuperDown;
-    fori (3) {
-        io.MouseDown[i] = gbDebug->mouseDownState[i]; 
-    }
-
-    // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
-
-    io.MouseWheel = gbDebug->mouseScrollY;
-    gbDebug->mouseScrollY = 0;
-
-    io.MousePos.x = gbDebug->mouseX;
-    io.MousePos.y = gbDebug->mouseY;
-
-    if (gbDebug->inputText[0]) {
-        io.AddInputCharactersUTF8(gbDebug->inputText);
-        gbDebug->nextTextPos = gbDebug->inputText;
-        *gbDebug->nextTextPos = '\0';
-    }
-
 
 
     /* ImGui draw code  */
@@ -939,7 +904,6 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             }
         }
     }
-    ImGui::NewFrame();
     if (!(gbDebug->isTypingInTextBox && input->newState.enterPressed)) {
         gbDebug->isTypingInTextBox = ImGui::GetIO().WantCaptureKeyboard;
     }
@@ -1812,15 +1776,6 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
     }
 
     ImGui::Render();
-    /***************************
-     * Signal to render debugger
-     ***************************/
-#ifdef MT_RENDER
-    gbDebug->shouldRender = true; 
-    broadcastCondition(gbDebug->renderCondition);
-    unlockMutex(gbDebug->debuggerMutex);
-#endif
-    profileEnd(profileState);
 
     //NOTE: used to test the pop that happens when switching between applications
     //        fori (soundState->buffer.len) {
