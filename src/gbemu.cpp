@@ -3431,9 +3431,4 @@ void runFrame(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programSt
             gbDebug->elapsedTimeSinceLastRecord = 0;
         }
     }        
-    if (gbDebug->isEnabled) {
-        profileStart("Draw Debug window", profileState);
-        drawDebugger(gbDebug, mmu, cpu, programState, dt);
-        profileEnd(profileState);
-    }
 }

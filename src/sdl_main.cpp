@@ -47,7 +47,7 @@
 #define RTC_FILE_LEN 48
 
 
-#define SECONDS_PER_FRAME (1.f/60)
+#define FRAME_TIME_US 16666
 #define CYCLES_PER_SLEEP 60000;
 
 #define AUDIO_SAMPLE_RATE 44100   
@@ -1259,7 +1259,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
     reset(cpu, mmu, gbDebug, programState);
 #endif
 
-    TimeUS startTime = nowInMicroseconds(), dt;
+    TimeUS startTime = nowInMicroseconds(), dt = 0;
     TimeUS startMeasureTime = startTime;
 
     /*******************
@@ -1500,9 +1500,6 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
                 }
             }
         }
-        TimeUS now = nowInMicroseconds();
-        dt = now - startTime;
-        startTime = now;
         if (gbDebug->isEnabled) {
             //TODO: Why do we have this?
 //            if (!debuggerContext->window) {
@@ -1526,9 +1523,30 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
         }
 
         profileStart("run frame", profileState);
+        {
+            TimeUS now = nowInMicroseconds();
+            dt = now - startTime;
+            startTime = now;
+        }
+        
+        {
+            int numFrames = (int)(dt/FRAME_TIME_US);
+            if (numFrames > 1) {
+                gbDebug->numFramesSkipped += numFrames - 1;
+            }
+            if(!isPaused) {
+#ifdef CO_DEBUG
+                gbEmuCode.runFrame(cpu, mmu, gbDebug, programState, dt);
+#else
+                runFrame(cpu, mmu, gbDebug, programState, dt);
+#endif
+            }
+        }
+        profileEnd(profileState);
+        
         if (gbDebug->isEnabled) {
             auto &io = ImGui::GetIO();
-            io.DeltaTime = (float)(dt / 1000000.);
+            io.DeltaTime = (float)(nowInMicroseconds() - startTime / 1000000.);
             io.KeysDown[gbDebug->key] = gbDebug->isKeyDown;
             io.KeyShift = gbDebug->isShiftDown;
             io.KeyCtrl = gbDebug->isCtrlDown;
@@ -1552,17 +1570,9 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
                 *gbDebug->nextTextPos = '\0';
             }
             newDebuggerFrame(debuggerContext);
-        }
-        if(!isPaused) {
-#ifdef CO_DEBUG
-            gbEmuCode.runFrame(cpu, mmu, gbDebug, programState, dt);
-#else
-            runFrame(cpu, mmu, gbDebug, programState, dt);
-#endif
-        }
-        profileEnd(profileState);
-        
-        if (gbDebug->isEnabled) {
+            profileStart("Draw Debug window", profileState);
+            drawDebugger(gbDebug, mmu, cpu, programState, dt);
+            profileEnd(profileState);
             signalRenderDebugger(debuggerContext);
         }
 
@@ -1984,21 +1994,10 @@ int main(int argc, char **argv) {
         }
 
         mainLoop(window, renderer, platformState, audioDeviceID, &gamepad, romFileName, shouldEnableDebugMode, debuggerContext, &debuggerWindow, gbDebug, programState);
-        
     }
 
 
 exit:
-
-    if (gamepad) {
-        SDL_GameControllerClose(gamepad);
-    }
-
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-
-
-    SDL_Quit();
 
     return 0;
 }

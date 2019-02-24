@@ -6,7 +6,7 @@
 a = key /   
 b = key .
 
-start = controller start, key #, key enter
+start = gamepad start, key #, key enter
 
 pause = key command-p
 

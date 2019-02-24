@@ -31,5 +31,8 @@ if not exist %build%\imgui.obj %CC% %CPPFLAGS% -c ..\src\3rdparty\imgui.cpp -o %
 if not exist %build%\SDL2.dll copy lib\SDL2.dll %build%
 del %build%\res.rc.bak
 copy %resources%\* %build%  && .\ssed -i".bak" "s/@GBEmuVersion@/%version%/g" %build%\res.rc && rc -fo  %build%\res.res %build%\res.rc && %CC% %CPPFLAGS% ..\src\sdl_main.cpp -TP -c -o%build%\sdl_main.obj && %CC% %build%\sdl_main.obj %build%\res.res %build%\imgui.obj -Zi lib\SDL2Main.lib Opengl32.lib Shell32.lib ComDlg32.lib lib\SDL2.lib -o%build%\gbemu.exe -MT -link -SUBSYSTEM:WINDOWS
-if %errorlevel% NEQ 0 echo Error compiling!
+if %errorlevel% NEQ 0 (
+    echo Error compiling!
+    exit /b 1
+)
 .\ctime_windows.exe -end buildtime.ctf

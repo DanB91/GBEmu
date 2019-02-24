@@ -66,7 +66,7 @@ build/gbemu_release: $(PLATFORM_OBJ)  build/default.metallib
 	$(CC) $(PLATFORM_OBJ) $(LDFLAGS) -ldl -o $@
 	@mv $@ build/gbemu
 build/test: ../src/tests/unitTests.cpp FORCE
-	$(CC) -o $@ $< $(CPPFLAGS)
+	$(CC) -o $@ $< $(CPPFLAGS) -g
 	build/test
 
 generate_version: ../version.txt

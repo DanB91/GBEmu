@@ -90,6 +90,7 @@ struct GameBoyDebug {
     isize numGBStates;
     TimeUS elapsedTimeSinceLastRecord;
     double frameTimeMS;
+    int numFramesSkipped;
     GameBoyState recordedGBStates[60];
     
     GameBoyState prevGBDebugStates[60]; //used for debugging

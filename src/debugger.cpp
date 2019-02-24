@@ -929,6 +929,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
         ImGui::SetWindowPos(ImVec2(0, 0), ImGuiCond_Once);
 
         ImGui::Text("Frame time %.2f", gbDebug->frameTimeMS);
+        ImGui::Text("Num frames skipped %d", gbDebug->numFramesSkipped);
         ImGui::Text("Number of states saved: %zd", gbDebug->numGBStates);
         ImGui::Text("Mouse X: %d, Y: %d", input->newState.mouseX / DEFAULT_SCREEN_SCALE, input->newState.mouseY/ DEFAULT_SCREEN_SCALE);
         if (ImGui::CollapsingHeader("CPU")) {
