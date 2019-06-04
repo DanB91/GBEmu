@@ -6,6 +6,20 @@
 #define IS_FLAG_CLEAR(flag) ((cpu->F & (int)Flag::flag) == 0)
 #define IS_DOWN(button) (input->newState.button)
 
+#ifdef CO_DEBUG
+#   define CALL_DYN(fn,...) programState->gbEmuCode.fn(__VA_ARGS__)
+#else
+#   define CALL_DYN(fn,...) fn(__VA_ARGS__)
+#endif
+
+void continueFromBreakPoint(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState) {
+    gbDebug->hitBreakpoint = nullptr;
+    CALL_DYN(rewindState, cpu, mmu, gbDebug);
+    setPausedState(false, programState, cpu);
+    if (mmu->hasRTC) {
+        syncRTCTime(&mmu->rtc, mmu->cartRAMPlatformState.rtcFileMap);
+    }
+}
 static i32 disassembleInstructionAtAddress(u16 startAddress, MMU *mmu, char *outDisassembledInstruction, size_t maxLen) {
 #define OP(nBPI, str, ...) snprintf(outDisassembledInstruction, maxLen, str, ##__VA_ARGS__);\
     numBytesPerInstruction = nBPI
@@ -859,6 +873,9 @@ static void drawProfileSection(ProfileState *profileState, ProfileSectionState *
         ImGui::TreePop();
     }
 }
+#endif
+#if CO_DEBUG
+extern "C"
 #endif
 void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState, TimeUS dt) {
 

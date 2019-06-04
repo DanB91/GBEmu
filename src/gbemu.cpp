@@ -2,11 +2,12 @@
 
 //unity
 #ifdef CO_DEBUG
-#define CO_IMPL
-#define GB_IMPL
+#   define CO_IMPL
+#   define GB_IMPL
+#   include "debugger.cpp"
 #endif
+#include "debugger.h"
 #include "gbemu.h"
-#include "debugger.cpp"
 #include "serialize.cpp"
 
 #define MAX_LY 153
@@ -2174,7 +2175,7 @@ static void recordDebugState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
     }
 }
 
-static bool rewindState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
+bool rewindState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
     if (gbDebug->numGBStates == 0) {
         return false;
     }
@@ -2211,14 +2212,6 @@ static bool rewindState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
     gbDebug->elapsedTimeSinceLastRecord = 0;
     
     return true;
-}
-void continueFromBreakPoint(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState) {
-    gbDebug->hitBreakpoint = nullptr;
-    rewindState(cpu, mmu, gbDebug);
-    setPausedState(false, programState, cpu);
-    if (mmu->hasRTC) {
-        syncRTCTime(&mmu->rtc, mmu->cartRAMPlatformState.rtcFileMap);
-    }
 }
 
 static void recordState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
@@ -2692,6 +2685,9 @@ static void stepLCD(LCD *lcd, u8 *outRequestedInterrupts, i32 cyclesTakeOfLastIn
     
 }
 
+#if CO_DEBUG
+extern "C"
+#endif
 void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume) {
     
     u8 tmpRequestedInterrupts = 0;

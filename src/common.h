@@ -892,13 +892,10 @@ void *pushMemory(MemoryStack* stack, isize size, bool clearToZero) {
     }
     
     stack->nextFreeAddress += size;
-
     
-
     if (clearToZero) {
         zeroMemory(ret, size);
     }
-
     return ret;
 }
 

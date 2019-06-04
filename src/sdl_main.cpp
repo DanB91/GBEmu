@@ -15,11 +15,14 @@
 #define GB_IMPL
 #ifdef CO_DEBUG
 #   include "gbemu.h"
+#   include "debugger.h"
+#   define CALL_DYN(fn,...)gbEmuCode->fn(__VA_ARGS__)
 #else
 #   include "gbemu.cpp"
+#   include "debugger.cpp"
+#   define CALL_DYN(fn,...)fn(__VA_ARGS__)
 #endif
 
-#include "debugger.h"
 #include "3rdparty/gl3w.c"
 #include "config.cpp"
 #if defined(LINUX) || defined(WINDOWS)
@@ -189,37 +192,41 @@ void alertDialogSDL(const char *message) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", message, nullptr);
 }
 #ifdef CO_DEBUG
-typedef void RunFrameFn(CPU *, MMU *, GameBoyDebug *, ProgramState *, TimeUS);
-typedef void ResetFn(CPU *cpu, MMU *, GameBoyDebug *, ProgramState *);
-typedef void SetPlatformContextFn(MemoryContext *, AlertDialogFn *);
-struct GBEmuCode {
-    void *handle;
-    RunFrameFn *runFrame;
-    ResetFn *reset;
-    SetPlatformContextFn *setPlatformContext;
-    time_t timeLastModified;
-};
 
 GBEmuCode loadGBEmuCode(const char *gbemuCodePath) {
-    GBEmuCode ret;
+    GBEmuCode ret = {};
 
-    ret.handle = SDL_LoadObject(gbemuCodePath);
-    CO_ASSERT_MSG(ret.handle, "Error opening shared obj: %s", SDL_GetError());
+    ret.gbEmuCodeHandle = SDL_LoadObject(gbemuCodePath);
+    CO_ASSERT_MSG(ret.gbEmuCodeHandle, "Error opening shared obj: %s", SDL_GetError());
 
-    ret.runFrame = (RunFrameFn*) SDL_LoadFunction(ret.handle, "runFrame");
+    ret.runFrame = (RunFrameFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "runFrame");
     CO_ASSERT(ret.runFrame);
 
-    ret.reset = (ResetFn*) SDL_LoadFunction(ret.handle, "reset");
+    ret.reset = (ResetFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "reset");
     CO_ASSERT(ret.runFrame);
     
-    ret.setPlatformContext = (SetPlatformContextFn*) SDL_LoadFunction(ret.handle, "setPlatformContext");
+    ret.setPlatformContext = (SetPlatformContextFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "setPlatformContext");
     CO_ASSERT(ret.setPlatformContext);
-
-    struct stat fileStats;
-    stat(gbemuCodePath, &fileStats);
-
-    ret.timeLastModified = fileStats.st_mtime;
     
+    ret.rewindState = (RewindStateFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "rewind");
+    CO_ASSERT(ret.rewindState);
+    
+    ret.step = (StepFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "step");
+    CO_ASSERT(ret.step);
+    
+    ret.readByte = (ReadByteFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "readByte");
+    CO_ASSERT(ret.readByte);
+    
+    ret.readWord = (ReadWordFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "readWord");
+    CO_ASSERT(ret.readWord);
+    
+    ret.drawDebugger = (DrawDebuggerFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "drawDebugger");
+    CO_ASSERT(ret.drawDebugger);
+    
+    struct stat fileStats;
+    
+    stat(gbemuCodePath, &fileStats);
+    ret.gbEmuTimeLastModified = fileStats.st_mtime;
     ret.setPlatformContext(getMemoryContext(), alertDialogSDL);
 
     return ret;
@@ -1195,8 +1202,11 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
 
     Input *input = &programState->input;
 
-    auto gbEmuCode = loadGBEmuCode(gbemuCodePath);
-
+    
+#ifdef CO_DEBUG
+    programState->gbEmuCode = loadGBEmuCode(gbemuCodePath);
+    auto gbEmuCode = &programState->gbEmuCode;
+#endif
     
     //Notification init
     NotificationState *notifications = &programState->notifications;
@@ -1253,11 +1263,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
         destSoundBuffer->len = srcSoundBuffer->len; 
         destSoundBuffer->data = PUSHM(destSoundBuffer->len, SoundFrame);
     }
-#ifdef CO_DEBUG
-    gbEmuCode.reset(cpu, mmu, gbDebug, programState);
-#else
-    reset(cpu, mmu, gbDebug, programState);
-#endif
+    CALL_DYN(reset,cpu, mmu, gbDebug, programState);
 
     TimeUS startTime = nowInMicroseconds(), dt = 0;
     TimeUS startMeasureTime = startTime;
@@ -1273,14 +1279,15 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
         {
             struct stat fileStats;
             stat(gbemuCodePath, &fileStats);
-
-            time_t fileTimeModified = fileStats.st_mtime;
-
+            time_t gbEmuFileTimeModified = fileStats.st_mtime;
+            
             //if the .so is new and the .so isn't locked, reload the code
-            if (fileTimeModified > gbEmuCode.timeLastModified &&
+            if (gbEmuFileTimeModified > gbEmuCode->gbEmuTimeLastModified &&
                     access("./soLock", F_OK) != 0) {
-                SDL_UnloadObject(gbEmuCode.handle);
-                gbEmuCode = loadGBEmuCode(gbemuCodePath);
+                
+                SDL_UnloadObject(gbEmuCode->gbEmuCodeHandle);
+                programState->gbEmuCode = loadGBEmuCode(gbemuCodePath);
+                gbEmuCode = &programState->gbEmuCode;
             }
         }
 #endif
@@ -1535,11 +1542,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
                 gbDebug->numFramesSkipped += numFrames - 1;
             }
             if(!isPaused) {
-#ifdef CO_DEBUG
-                gbEmuCode.runFrame(cpu, mmu, gbDebug, programState, dt);
-#else
-                runFrame(cpu, mmu, gbDebug, programState, dt);
-#endif
+                CALL_DYN(runFrame, cpu, mmu, gbDebug, programState, dt);
             }
         }
         profileEnd(profileState);
@@ -1571,7 +1574,7 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
             }
             newDebuggerFrame(debuggerContext);
             profileStart("Draw Debug window", profileState);
-            drawDebugger(gbDebug, mmu, cpu, programState, dt);
+            CALL_DYN(drawDebugger, gbDebug, mmu, cpu, programState, dt);
             profileEnd(profileState);
             signalRenderDebugger(debuggerContext);
         }

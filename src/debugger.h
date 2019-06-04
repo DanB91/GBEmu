@@ -18,6 +18,11 @@ void closeDebugger(DebuggerPlatformContext *debuggerContext);
 void signalRenderDebugger(DebuggerPlatformContext *platformContext);
 void newDebuggerFrame(DebuggerPlatformContext *platformContext);
 
+#if CO_DEBUG
+extern "C"
+#endif
+void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState, TimeUS dt);
+
 enum class BreakpointOP {
   Equal, LessThan, GreaterThan
 };

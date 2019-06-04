@@ -556,6 +556,31 @@ static const char *inputActionToStr[] = {
 void registerInputMapping(int inputCode, Input::Action action, Input::CodeToActionMap *mappings);
 bool retrieveActionForInputCode(int inputCode, Input::Action *outAction, Input::CodeToActionMap *mappings);
 
+#ifdef CO_DEBUG
+struct ProgramState;
+typedef void RunFrameFn(CPU *, MMU *, GameBoyDebug *, ProgramState *, TimeUS);
+typedef void ResetFn(CPU *cpu, MMU *, GameBoyDebug *, ProgramState *);
+typedef void SetPlatformContextFn(MemoryContext *, AlertDialogFn *);
+typedef void RewindStateFn(CPU *, MMU *, GameBoyDebug *);
+typedef void StepFn(CPU *cpu, MMU *, GameBoyDebug *, int volume);
+typedef u8 ReadByteFn(u16, MMU*);
+typedef u16 ReadWordFn(u16, MMU*);
+typedef void DrawDebuggerFn(GameBoyDebug *, MMU *, CPU *, ProgramState *, TimeUS);
+
+struct GBEmuCode {
+    void *gbEmuCodeHandle;
+    RunFrameFn *runFrame;
+    ResetFn *reset;
+    SetPlatformContextFn *setPlatformContext;
+    RewindStateFn *rewindState;
+    StepFn *step;
+    ReadByteFn *readByte;
+    ReadWordFn *readWord;
+    DrawDebuggerFn *drawDebugger;
+    time_t gbEmuTimeLastModified;
+};
+#endif
+
 struct ProgramState {
     char loadedROMName[MAX_ROM_NAME_LEN + 1];
     char homeDirectoryPath[MAX_PATH_LEN + 1];
@@ -573,6 +598,9 @@ struct ProgramState {
     void *guiContext; 
     
     int screenScale;
+#ifdef CO_DEBUG
+    GBEmuCode gbEmuCode;
+#endif
 };
 inline u8 lb(u16 word) {
     return (u8)(word & 0xFF);
@@ -603,11 +631,18 @@ inline void setPausedState(bool isPaused, ProgramState *programState, CPU *cpu) 
     cpu->isPaused = isPaused;
 }
 
-u8 readByte(u16 address, MMU *mmu);
-u16 readWord(u16 address, MMU *mmu);
 void writeByte(u8 byte, u16 address, MMU *mmu, GameBoyDebug *gbDebug);
 void writeWord(u16 word, u16 address, MMU *mmu, GameBoyDebug *gbDebug);
+#if CO_DEBUG
+extern "C" {
+#endif
+u8 readByte(u16 address, MMU *mmu);
+u16 readWord(u16 address, MMU *mmu);
 void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume);
+bool rewindState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug);
+#if CO_DEBUG
+}
+#endif
     
 #ifdef CO_DEBUG
     extern "C"

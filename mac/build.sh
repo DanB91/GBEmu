@@ -12,7 +12,7 @@ popd() {
 }
 
 printUsage() {
-	echo "Builds GBEmu for Linux. By default, the 'release' build is built."
+	echo "Builds GBEmu for macOS. By default, the 'release' build is built."
 	echo "Usage $0 [help | release | profile | debug | test]"
 	echo -e "\thelp -- Prints this help message."
 	echo -e "\trelease -- Builds release build."
