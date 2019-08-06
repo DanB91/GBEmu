@@ -892,6 +892,36 @@ static bool doConfigFileParsing(const char *configFilePath, ProgramState *progra
     return true;
 }
 
+//returns true for yes, else false
+static bool showYesNoDialog(const char *message, const char *title) {
+    SDL_MessageBoxButtonData noButton;
+    noButton.buttonid = 0;
+    noButton.text = "No";
+    noButton.flags = SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+
+    SDL_MessageBoxButtonData yesButton;
+    yesButton.buttonid = 1;
+    yesButton.text = "Yes";
+    yesButton.flags = 0;
+
+    SDL_MessageBoxButtonData buttons[] = {
+        noButton, yesButton 
+    };
+
+    SDL_MessageBoxData data = {};
+    data.buttons = buttons;
+    data.flags = SDL_MESSAGEBOX_INFORMATION;
+    data.numbuttons = ARRAY_LEN(buttons);
+            
+    data.message = message;
+    data.title = title;
+
+    int isYesPressed = 0;
+    bool success = SDL_ShowMessageBox(&data, &isYesPressed) == 0;
+    
+    return success && isYesPressed;
+}
+
 static void 
 mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformState,
          SDL_AudioDeviceID audioDeviceID, SDL_GameController **gamepad, const char *romFileName,
@@ -966,8 +996,13 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
 				computedChecksum -= mmu->romData[i] + 1;
 			}
 			if (computedChecksum != mmu->romData[0x14D]) {
-				ALERT("This file is not a valid Game Boy ROM file. Checksum does not match.");
-				return;
+                bool isYesPressed = 
+                        showYesNoDialog(
+                            "Header checksum does not match. This file may not be a valid Game Boy ROM file.\nAre you sure you want to continue?",
+                            "Warning!");
+                if (!isYesPressed) {
+                   return; 
+                }
 			}
 		}
 		{
@@ -980,8 +1015,13 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
 				computedChecksum += mmu->romData[i];
 			}
 			if (computedChecksum != globalChecksum) {
-				ALERT("This file is not a valid Game Boy ROM file. Global checksum does not match.");
-				return;
+                bool isYesPressed = 
+                        showYesNoDialog(
+                            "Global checksum does not match. This file may not be a valid Game Boy ROM file.\nAre you sure you want to continue?",
+                            "Warning!");
+                if (!isYesPressed) {
+                   return; 
+                }
 			}
 		}
         u8 mbcType = mmu->romData[0x147];
