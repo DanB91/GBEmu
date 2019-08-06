@@ -19,7 +19,6 @@
 #import <simd/simd.h>
 #import "metal_shader_defs.h"
 
-
 struct MetalPlatformState : PlatformState {
     id<MTLRenderPipelineState> renderPipelineState;
     id<MTLTexture> screenTexture;
@@ -113,6 +112,7 @@ DebuggerPlatformContext *initDebugger(GameBoyDebug *gbDebug,ProgramState *progra
     io.DisplaySize.x = DEBUG_WINDOW_MIN_WIDTH;
     io.DisplaySize.y = DEBUG_WINDOW_MIN_HEIGHT;
     io.IniFilename = "layout.ini";
+    io.FontGlobalScale = 1.0;
     io.KeyMap[ImGuiKey_Tab] = SDLK_TAB;                     // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array.
     io.KeyMap[ImGuiKey_LeftArrow] = SDL_SCANCODE_LEFT;
     io.KeyMap[ImGuiKey_RightArrow] = SDL_SCANCODE_RIGHT;

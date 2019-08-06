@@ -17,6 +17,7 @@ DebuggerPlatformContext *initDebugger(GameBoyDebug *gbDebug, ProgramState *progr
 void closeDebugger(DebuggerPlatformContext *debuggerContext);
 void signalRenderDebugger(DebuggerPlatformContext *platformContext);
 void newDebuggerFrame(DebuggerPlatformContext *platformContext);
+bool didHitBreakpoint(GameBoyDebug *gbDebug);
 
 #if CO_DEBUG
 extern "C"
@@ -28,7 +29,7 @@ enum class BreakpointOP {
 };
 
 enum class BreakpointType {
-   Regular = 0, Register, Hardware
+   Regular = 0, Register, Hardware, LostVRAMWrite, LostOAMWrite
 };
 
 enum class BreakpointExpectedValueType {
@@ -80,6 +81,7 @@ struct GameBoyDebug {
 
     i64 numBreakpoints;
     i64 debugNumPreviousSoundSamples;
+    i64 totalFrameCount;
 
     u16 disassembledInstructionAddresses[MAX_INSTRUCTIONS];
     char disassembledInstructions[MAX_INSTRUCTIONS][MAX_INSTRUCTION_LEN];
@@ -125,6 +127,11 @@ struct GameBoyDebug {
     int mouseScrollY;
     bool mouseDownState[3];
     bool isWindowInFocus;
+    bool isLostVRAMWriteBoxChecked;
+    bool isLostOAMWriteBoxChecked;
+    Breakpoint *lostVRAMWriteBP;
+    Breakpoint *lostOAMWriteBP;
+    
 };
 Breakpoint *hardwareBreakpointForAddress(u16 address, BreakpointExpectedValueType expectedValueType, GameBoyDebug *gbDebug);
 void continueFromBreakPoint(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState);

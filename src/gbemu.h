@@ -457,6 +457,7 @@ struct MMU {
     SquareWave2 squareWave2Channel;
     Wave waveChannel;
     Noise noiseChannel;
+    u8 soundFrameStep; //ranges from 0 to 7 
     i32 ticksSinceLastLengthCounter,  ticksSinceLastEnvelop, ticksSinceLastSweep;
     i32 cyclesSinceLastSoundSample, cyclesSinceLastFrameSequencer;
     i32 masterLeftVolume, masterRightVolume;
@@ -466,8 +467,12 @@ struct CPU {
     u16 PC, SP;
     u8 A, B, C, D; 
     u8 E, F, H, L; 
+    u8 executingInstruction;
+    bool isPreparingToInterrupt;
+    i32 cyclesSinceLastInstruction;
+    i32 cyclesInstructionWillTake;
+    i32 branchCyclesInstructionWillTake;
     i64 totalCycles;  //total cycles since game has been loaded
-    i32 instructionCycles; //number of cycles in a given instruction
     i32 leftOverCyclesFromPreviousFrame; 
     i32 cylesExecutedThisFrame;
     bool enableInterrupts; 

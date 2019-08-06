@@ -208,7 +208,7 @@ GBEmuCode loadGBEmuCode(const char *gbemuCodePath) {
     ret.setPlatformContext = (SetPlatformContextFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "setPlatformContext");
     CO_ASSERT(ret.setPlatformContext);
     
-    ret.rewindState = (RewindStateFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "rewind");
+    ret.rewindState = (RewindStateFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "rewindState");
     CO_ASSERT(ret.rewindState);
     
     ret.step = (StepFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "step");

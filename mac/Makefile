@@ -12,13 +12,13 @@ PLATFORM_OBJ += build/imgui.o
 
 VERSION=$(shell cat ../version.txt)
 
-CPPFLAGS=-fno-exceptions -mmacosx-version-min=10.13 -Wall -Wextra -Wno-nullability-completeness -std=c++11 -fobjc-arc -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -I/Library/Frameworks/SDL2.framework/Headers
+CPPFLAGS=-fno-exceptions -mmacosx-version-min=10.13 -Wall -Wextra -Wno-nullability-completeness -std=c++11 -fobjc-arc -Wconversion -isystem /usr/local/include -Wno-int-to-void-pointer-cast -Iresources/SDL2.framework/Headers
 METALFLAGS=
 CC=clang++
 
 CTIME = ./ctime_mac
 
-LDFLAGS += -framework CoreFoundation -framework AppKit -Fresources -framework SDL2 -framework Metal -lstdc++
+LDFLAGS += -Fresources/ -framework CoreFoundation -framework AppKit -Fresources -framework SDL2 -framework Metal -lstdc++
 PLATFORM_OBJ += build/mac.o
 
 first:

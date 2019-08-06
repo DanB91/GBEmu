@@ -12,6 +12,10 @@
 #   define CALL_DYN(fn,...) fn(__VA_ARGS__)
 #endif
 
+bool didHitBreakpoint(GameBoyDebug *gbDebug) {
+    auto bp = gbDebug->hitBreakpoint;
+    return bp && bp->isUsed && !bp->isDisabled;
+}
 void continueFromBreakPoint(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState) {
     gbDebug->hitBreakpoint = nullptr;
     CALL_DYN(rewindState, cpu, mmu, gbDebug);
@@ -384,8 +388,7 @@ static Breakpoint
     return nullptr;
 }
 
-static void 
-deleteBreakpoint(Breakpoint *bp, GameBoyDebug *gbDebug) {
+static void deleteBreakpoint(Breakpoint *bp, GameBoyDebug *gbDebug) {
     bp->isUsed = false;
     gbDebug->numBreakpoints--;
     
@@ -398,8 +401,7 @@ deleteBreakpoint(Breakpoint *bp, GameBoyDebug *gbDebug) {
 //deleteBreakpoint(address, gbDebug, true);
 //}
 
-static void 
-addBreakpoint(GameBoyDebug *gbDebug, u16 address, const char *reg, BreakpointType type, BreakpointExpectedValueType expectedValueType,
+static Breakpoint *addBreakpoint(GameBoyDebug *gbDebug, u16 address, const char *reg, BreakpointType type, BreakpointExpectedValueType expectedValueType,
              BreakpointOP op, u16 expectedVaue) {
     //TODO: add return value if more than 16 breakpoints
     foriarr (gbDebug->breakpoints) {
@@ -416,6 +418,10 @@ addBreakpoint(GameBoyDebug *gbDebug, u16 address, const char *reg, BreakpointTyp
             case BreakpointType::Register: {
                 copyMemory(reg, bp->reg, 3);
             } break;
+            case BreakpointType::LostVRAMWrite:
+            case BreakpointType::LostOAMWrite:  {
+                //do nothing 
+            } break;
 
             }
 
@@ -425,58 +431,73 @@ addBreakpoint(GameBoyDebug *gbDebug, u16 address, const char *reg, BreakpointTyp
             bp->op = op;
             bp->expectedValue = expectedVaue;
             gbDebug->numBreakpoints++;
-            break;
+            return bp;
         }
     }
+    
+    return nullptr;
 }
 
+static Breakpoint *addLostVRAMWriteBreakpoint(GameBoyDebug *gbDebug) {
+   return addBreakpoint(gbDebug, 0, nullptr, BreakpointType::LostVRAMWrite, BreakpointExpectedValueType::Any, BreakpointOP::Equal, 0);
+}
 
-static void
+static Breakpoint *addLostOAMWriteBreakpoint(GameBoyDebug *gbDebug) {
+   return addBreakpoint(gbDebug, 0, nullptr, BreakpointType::LostOAMWrite, BreakpointExpectedValueType::Any, BreakpointOP::Equal, 0);
+}
+
+static Breakpoint *
 addRegularBreakpoint(u16 address, GameBoyDebug *gbDebug, BreakpointOP op) {
-    addBreakpoint(gbDebug, address, nullptr, BreakpointType::Regular, BreakpointExpectedValueType::None, op, 0);
+    return addBreakpoint(gbDebug, address, nullptr, BreakpointType::Regular, BreakpointExpectedValueType::None, op, 0);
 }
 
-static void 
+static Breakpoint * 
 addAnyValueHardwareBreakpoint(u16 address, GameBoyDebug *gbDebug) {
-    addBreakpoint(gbDebug, address, nullptr,  BreakpointType::Hardware, BreakpointExpectedValueType::Any, BreakpointOP::Equal, true);
+    return addBreakpoint(gbDebug, address, nullptr,  BreakpointType::Hardware, BreakpointExpectedValueType::Any, BreakpointOP::Equal, true);
 }
 
-static void 
+static Breakpoint * 
 addCustomValueHardwareBreakpoint(u16 address, GameBoyDebug *gbDebug, u8 expectedValue, BreakpointOP op) {
-    addBreakpoint(gbDebug, address, nullptr,  BreakpointType::Hardware, BreakpointExpectedValueType::Custom, op, expectedValue);
+    return addBreakpoint(gbDebug, address, nullptr,  BreakpointType::Hardware, BreakpointExpectedValueType::Custom, op, expectedValue);
 }
-static void 
+static Breakpoint * 
 addBitClearHardwareBreakpoint(u16 address, GameBoyDebug *gbDebug, u8 expectedValue, BreakpointOP op) {
-    addBreakpoint(gbDebug, address, nullptr,  BreakpointType::Hardware, BreakpointExpectedValueType::BitClear, op, expectedValue);
+    return addBreakpoint(gbDebug, address, nullptr,  BreakpointType::Hardware, BreakpointExpectedValueType::BitClear, op, expectedValue);
 }
 
-static void 
+static Breakpoint * 
 addBitSetHardwareBreakpoint(u16 address, GameBoyDebug *gbDebug, u8 expectedValue, BreakpointOP op) {
-    addBreakpoint(gbDebug, address, nullptr,  BreakpointType::Hardware, BreakpointExpectedValueType::BitSet, op, expectedValue);
+    return addBreakpoint(gbDebug, address, nullptr,  BreakpointType::Hardware, BreakpointExpectedValueType::BitSet, op, expectedValue);
 }
 
-static void 
+static Breakpoint * 
 addCustomValueRegisterBreakpoint(const char *reg, GameBoyDebug *gbDebug, u16 expectedValue, BreakpointOP op) {
-    addBreakpoint(gbDebug, 0, reg,  BreakpointType::Register, BreakpointExpectedValueType::Custom, op, expectedValue);
+    return addBreakpoint(gbDebug, 0, reg,  BreakpointType::Register, BreakpointExpectedValueType::Custom, op, expectedValue);
 }
 
-static void 
+static Breakpoint * 
 addBitClearRegisterBreakpoint(const char *reg, GameBoyDebug *gbDebug, u16 expectedValue, BreakpointOP op) {
-    addBreakpoint(gbDebug, 0, reg,  BreakpointType::Register, BreakpointExpectedValueType::BitClear, op, expectedValue);
+    return addBreakpoint(gbDebug, 0, reg,  BreakpointType::Register, BreakpointExpectedValueType::BitClear, op, expectedValue);
 }
 
-static void 
+static Breakpoint * 
 addBitSetRegisterBreakpoint(const char *reg, GameBoyDebug *gbDebug, u16 expectedValue, BreakpointOP op) {
-    addBreakpoint(gbDebug, 0, reg,  BreakpointType::Register, BreakpointExpectedValueType::BitSet, op, expectedValue);
+    return addBreakpoint(gbDebug, 0, reg,  BreakpointType::Register, BreakpointExpectedValueType::BitSet, op, expectedValue);
 }
-static void 
+static Breakpoint * 
 addAnyValueRegisterBreakpoint(const char *reg, GameBoyDebug *gbDebug) {
-    addBreakpoint(gbDebug, 0, reg,  BreakpointType::Register, BreakpointExpectedValueType::Any, BreakpointOP::Equal, 0);
+    return addBreakpoint(gbDebug, 0, reg,  BreakpointType::Register, BreakpointExpectedValueType::Any, BreakpointOP::Equal, 0);
 }
 
 static void drawBreakpointDescription(Breakpoint *bp) {
 
     switch (bp->type) {
+    case BreakpointType::LostVRAMWrite: {
+       ImGui::Text("Break if writing to VRAM during ScanOAMAndVRAM"); 
+    } break;
+    case BreakpointType::LostOAMWrite: {
+        ImGui::Text("Break if writing to OAM during ScanOAM or ScanOAMAndVRAM");
+    } break;
     case BreakpointType::Regular: {
         switch (bp->op) {
         case BreakpointOP::Equal: ImGui::Text("Break when PC == %X", bp->address); break;
@@ -555,7 +576,7 @@ static void drawBreakpointWindow(GameBoyDebug *gbDebug, TimeUS dt) {
                 foriarr (gbDebug->breakpoints) {
                     Breakpoint *bp = gbDebug->breakpoints + i;
                     if (bp->isUsed) {
-                        if (bp == gbDebug->hitBreakpoint) {
+                        if (didHitBreakpoint(gbDebug) && bp == gbDebug->hitBreakpoint) {
                             drawHitBreakpointDescription(bp, gbDebug);
                         }
                         else {
@@ -827,9 +848,28 @@ static void drawBreakpointWindow(GameBoyDebug *gbDebug, TimeUS dt) {
             }
 
         }
-
-
-
+        
+        ImGui::Separator();
+        ImGui::NewLine();
+        
+        {
+            ImGui::Checkbox("Break if writing to VRAM during ScanOAMAndVRAM", &gbDebug->isLostVRAMWriteBoxChecked); 
+            if (!gbDebug->lostVRAMWriteBP && gbDebug->isLostVRAMWriteBoxChecked) {
+               gbDebug->lostVRAMWriteBP = addLostVRAMWriteBreakpoint(gbDebug);    
+            }
+            else if (gbDebug->lostVRAMWriteBP && !gbDebug->isLostVRAMWriteBoxChecked) {
+                deleteBreakpoint(gbDebug->lostVRAMWriteBP, gbDebug);
+                gbDebug->lostVRAMWriteBP = nullptr;
+            }
+            ImGui::Checkbox("Break if writing to OAM during ScanOAMAndVRAM and ScanOAM", &gbDebug->isLostOAMWriteBoxChecked);
+            if (!gbDebug->lostOAMWriteBP && gbDebug->isLostOAMWriteBoxChecked) {
+               gbDebug->lostOAMWriteBP = addLostOAMWriteBreakpoint(gbDebug);    
+            }
+            else if (gbDebug->lostOAMWriteBP && !gbDebug->isLostOAMWriteBoxChecked) {
+                deleteBreakpoint(gbDebug->lostOAMWriteBP, gbDebug);
+                gbDebug->lostOAMWriteBP = nullptr;
+            }
+        }
     }
     ImGui::End();
 }
@@ -955,12 +995,14 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             ImGui::Text("PC: %X SP: %X", cpu->PC, cpu->SP);
             ImGui::Text("Z: %d N: %d H: %d C %d", IS_FLAG_SET(Z),
                         IS_FLAG_SET(N), IS_FLAG_SET(H), IS_FLAG_SET(C));
-            ImGui::Text("Next instruction to execute: %X", readByte(cpu->PC, mmu));
+            ImGui::Text("Next instruction to execute: %X", cpu->executingInstruction);
             {
                 char disassembledInstruction[MAX_INSTRUCTION_LEN];
                 disassembleInstructionAtAddress(cpu->PC, mmu, disassembledInstruction, ARRAY_LEN(disassembledInstruction));
                 ImGui::Text("Disassembled instruction:\n\t%s", disassembledInstruction);
             }
+            ImGui::Text("Cycles left in instruction: %d", cpu->cyclesInstructionWillTake -
+                        cpu->cyclesSinceLastInstruction);
 
             ImGui::Text("All Interrupts Enabled: %s", cpu->enableInterrupts ? "true" : "false");
             ImGui::Text("Interrupts enabled: VBlank: %s, LCD: %s, Timer: %s", 
@@ -1015,6 +1057,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             }
 
             ImGui::Text("Enabled: %s", mmu->lcd.isEnabled ? "true" : "false");
+            ImGui::Text("Total frame count %llu", gbDebug->totalFrameCount); 
             ImGui::Text("Mode: %s", lcdModeStr);
             ImGui::Text("Mode clock: %d", mmu->lcd.modeClock);
             ImGui::Text("scx: %u scy: %u", mmu->lcd.scx, mmu->lcd.scy);
@@ -1142,8 +1185,22 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
                 ImGui::Text("Number of instructions recorded: %d", gbDebug->numDebugStates);
             }
             if (cpu->isPaused) {
-                if (ImGui::Button("Step")) {
+                if (ImGui::Button("Step Cycle")) {
                     step(cpu, mmu, gbDebug, programState->soundState.volume);
+                    gbDebug->shouldRefreshDisassembler = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Step Instruction")) {
+                    do {
+                        step(cpu, mmu, gbDebug, programState->soundState.volume);
+                    } while (cpu->cyclesSinceLastInstruction != 0);
+                    gbDebug->shouldRefreshDisassembler = true;
+                }
+                if (ImGui::Button("Step Frame")) {
+                    i64 previousFrameCount = gbDebug->totalFrameCount;
+                    do {
+                        step(cpu, mmu, gbDebug, programState->soundState.volume);
+                    } while (previousFrameCount >= gbDebug->totalFrameCount);
                     gbDebug->shouldRefreshDisassembler = true;
                 }
                 if (gbDebug->numDebugStates > 0) {

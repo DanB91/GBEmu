@@ -5,6 +5,7 @@
 #include "gbemu.h"
 enum class SaveStateVersion : i32 {
     Initial = 1,
+    CycleAccurateUpdate = 2,
     
     //Don't delete this
     CurrentPlusOne
@@ -18,6 +19,15 @@ struct SerializingState {
         auto res = serialize(&(data), state); \
         if (res != FileSystemResultCode::OK) {\
             CO_ERR("Failed to write " #data);\
+            return res;\
+        }\
+    }
+#define REM(_fieldAdded, _fieldRemoved, _type, _fieldName, _defaultValue) \
+    _type _fieldName = (_defaultValue); \
+    if (state->version >= (_fieldAdded) && state->version < (_fieldRemoved)){\
+        auto res = serialize(&(_fieldName), state); \
+        if (res != FileSystemResultCode::OK) {\
+            CO_ERR("Failed to write " #_fieldName);\
             return res;\
         }\
     }
@@ -409,13 +419,32 @@ struct SerializingState {
        ADD(data->waveChannel, SaveStateVersion::Initial);
        ADD(data->noiseChannel, SaveStateVersion::Initial);
        
+//       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
+//           i32, ticksSinceLastLengthCounter, 0);
+//       if (ticksSinceLastLengthCounter > 0) {
+//           //TODO:
+//       }
+//       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
+//           i32, ticksSinceLastEnvelop, 0);
+//       if (ticksSinceLastEnvelop > 0) {
+//           //TODO:
+//       }
+//       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
+//           i32, ticksSinceLastSweep, 0);
+//       if (ticksSinceLastSweep > 0) {
+//          //TODO: 
+//       }
+//       //TODO: figure out step 
+           
        ADD(data->ticksSinceLastLengthCounter, SaveStateVersion::Initial);
        ADD(data->ticksSinceLastEnvelop, SaveStateVersion::Initial);
        ADD(data->ticksSinceLastSweep, SaveStateVersion::Initial);
+       
        ADD(data->cyclesSinceLastSoundSample, SaveStateVersion::Initial);
        ADD(data->cyclesSinceLastFrameSequencer, SaveStateVersion::Initial);
        ADD(data->masterLeftVolume, SaveStateVersion::Initial);
        ADD(data->masterRightVolume, SaveStateVersion::Initial);
+//       ADD(data->soundFrameStep, SaveStateVersion::CycleAccurateUpdate);
        
        return FileSystemResultCode::OK;
     }
@@ -432,12 +461,19 @@ struct SerializingState {
         ADD(data->H, SaveStateVersion::Initial);
         ADD(data->L, SaveStateVersion::Initial);
         ADD(data->totalCycles, SaveStateVersion::Initial);
-        ADD(data->instructionCycles, SaveStateVersion::Initial);
+        REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate, 
+            i32, instructionCycles, 0);
         ADD(data->leftOverCyclesFromPreviousFrame, SaveStateVersion::Initial);
         ADD(data->enableInterrupts, SaveStateVersion::Initial);
         ADD(data->isHalted, SaveStateVersion::Initial);
         ADD(data->isPaused, SaveStateVersion::Initial);
         ADD(data->didHitIllegalOpcode, SaveStateVersion::Initial);
+        
+        ADD(data->executingInstruction, SaveStateVersion::CycleAccurateUpdate);
+        ADD(data->isPreparingToInterrupt, SaveStateVersion::CycleAccurateUpdate);
+        ADD(data->cyclesSinceLastInstruction, SaveStateVersion::CycleAccurateUpdate);
+        ADD(data->cyclesInstructionWillTake, SaveStateVersion::CycleAccurateUpdate);
+        ADD(data->branchCyclesInstructionWillTake, SaveStateVersion::CycleAccurateUpdate);
         
        return FileSystemResultCode::OK;
     }

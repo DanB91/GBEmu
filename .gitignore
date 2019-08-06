@@ -22,3 +22,5 @@ tags
 *.obj
 *.pdb
 *.ctf
+*.cxxflags
+*.cflags
