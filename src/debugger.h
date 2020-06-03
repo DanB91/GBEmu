@@ -129,6 +129,7 @@ struct GameBoyDebug {
     bool isWindowInFocus;
     bool isLostVRAMWriteBoxChecked;
     bool isLostOAMWriteBoxChecked;
+    i64 customCycleCounterStart;
     Breakpoint *lostVRAMWriteBP;
     Breakpoint *lostOAMWriteBP;
     

@@ -10,13 +10,6 @@
 #include "gbemu.h"
 #include "serialize.cpp"
 
-#define MAX_LY 153
-#define TOTAL_SCANLINE_DURATION 456
-#define HBLANK_DURATION 204
-#define VBLANK_DURATION 456
-#define SCAN_OAM_DURATION 80
-#define SCAN_VRAM_AND_OAM_DURATION 172
-#define CYCLES_PER_STEP 4
 
 static bool shouldBreakOnPC(u16 PC, GameBoyDebug *gbDebug, Breakpoint **hitBreakpoint) {
     if (!gbDebug->isEnabled || gbDebug->numBreakpoints <= 0)  {
@@ -112,7 +105,7 @@ u8 readByte(u16 address, MMU *mmu) {
     } break;
     case 0x8000 ... 0x9FFF: {
         //vram can only be properly accessed when not being drawn from
-        return (lcd->mode != LCDMode::ScanVRAMAndOAM) ? lcd->videoRAM[address - 0x8000] : 0xFF;
+        return (!lcd->isEnabled || lcd->mode != LCDMode::ScanVRAMAndOAM) ? lcd->videoRAM[address - 0x8000] : 0xFF;
 //        return lcd->videoRAM[address - 0x8000];
     } break;
     case 0xA000 ... 0xBFFF: {
@@ -151,12 +144,17 @@ u8 readByte(u16 address, MMU *mmu) {
     case 0xC000 ... 0xDFFF: return mmu->workingRAM[address - 0xC000];
     case 0xE000 ... 0xFDFF: return mmu->workingRAM[address - 0xE000];
     case 0xFE00 ... 0xFE9F: {
-        switch (lcd->mode) {
-        case LCDMode::ScanVRAMAndOAM:
-        case LCDMode::ScanOAM:
-            return 0xFF;
+        if (lcd->isEnabled) {
+            switch (lcd->mode) {
+            case LCDMode::ScanVRAMAndOAM:
+            case LCDMode::ScanOAM:
+                return 0xFF;
 
-        default: return lcd->oam[address - 0xFE00];
+            default: return lcd->oam[address - 0xFE00];
+            }
+        }
+        else {
+            return lcd->oam[address - 0xFE00];
         }
     } break;
     case 0xFF00: {
@@ -459,7 +457,7 @@ void writeByte(u8 byte, u16 address, MMU *mmu, GameBoyDebug *gbDebug) {
     } break;
     case 0x8000 ... 0x9FFF: { 
         //vram can only be properly accessed when not being drawn from
-        if (lcd->mode != LCDMode::ScanVRAMAndOAM) {
+        if (!lcd->isEnabled || lcd->mode != LCDMode::ScanVRAMAndOAM) {
             lcd->videoRAM[address - 0x8000] = byte;
             if (gbDebug->isEnabled) {
                 gbDebug->tiles[(address-0x8000)/16].needsUpdate = true;
@@ -541,7 +539,7 @@ void writeByte(u8 byte, u16 address, MMU *mmu, GameBoyDebug *gbDebug) {
     case 0xE000 ... 0xFDFF: mmu->workingRAM[address - 0xE000] = byte; break;
 
     case 0xFE00 ... 0xFE9F: {
-        if (lcd->mode != LCDMode::ScanVRAMAndOAM && lcd->mode != LCDMode::ScanOAM) {
+        if (!lcd->isEnabled || mmu->isDMAOccurring || (lcd->mode != LCDMode::ScanVRAMAndOAM && lcd->mode != LCDMode::ScanOAM)) {
             lcd->oam[address - 0xFE00] = byte;
         }
         else {
@@ -972,13 +970,14 @@ void writeByte(u8 byte, u16 address, MMU *mmu, GameBoyDebug *gbDebug) {
 
     case 0xFF40: { //LCD Control
         lcd->isEnabled = isBitSet(7, byte);
+        
         if (lcd->isEnabled) {
             lcd->stat = (lcd->stat & 0xF8) | (u8)lcd->mode;
         }
         else {
             lcd->stat &= 0xF8 ;  //reset to HBlank if disabled. TODO: Not sure if this correct
             lcd->modeClock = 0;
-            lcd->mode = LCDMode::HBlank;
+            lcd->mode = LCDMode::ScanOAM;
             lcd->ly = 0;
         }
 
@@ -1004,10 +1003,12 @@ void writeByte(u8 byte, u16 address, MMU *mmu, GameBoyDebug *gbDebug) {
     case 0xFF44: lcd->ly = 0; break; //reset ly
     case 0xFF45: lcd->lyc = byte; break;
     case 0xFF46: {
-        if (byte < 0xF1) {
-            mmu->currentDMAAddress = ((u16)(byte << 8)) & 0xFF00;
-            mmu->isDMAOccurring = true;
+        if (byte >= 0xFE) {
+            //TODO: hack!  Really shouldn't be changing byte here
+            byte = 0xD0 + (byte & 0xF);
         }
+        mmu->currentDMAAddress = ((u16)(byte << 8)) & 0xFF00;
+        mmu->isDMAOccurring = true;
     } break;
     case 0xFF47: updateColorPaletteFromU8(lcd->backgroundPalette, byte); break;
     case 0xFF48: updateColorPaletteFromU8(lcd->spritePalette0, byte); break;
@@ -1235,6 +1236,61 @@ static u16 popOffStack(u16 *SP, MMU *mmu) {
 
     return ret;
 }
+constexpr i32 instructionToCycles[] = {
+    4, 12, 8, 8, 4, 4, 8, 4, 20, 8, 8, 8, 4, 4, 8, 4,
+    4, 12, 8, 8, 4, 4, 8, 4, 12, 8, 8, 8, 4, 4, 8, 4, 
+    8, 12, 8, 8, 4, 4, 8, 4, 8, 8, 8, 8, 4, 4, 8, 4, 
+    8, 12, 8, 8, 12, 12, 12, 4, 8, 8, 8, 8, 4, 4, 8, 
+    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
+    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
+    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
+    4, 8, 8, 8, 8, 8, 8, 4, 8, 4, 4, 4, 4, 4, 4, 8,
+    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
+    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
+    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
+    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
+    4,  8, 12, 12, 16, 12, 16, 8, 16, 8, 16, 12, 0, 
+    12, 24, 8, 16, 8, 12, 12, 0, 12, 16, 8, 16, 8, 
+    16, 12, 0, 12, 0, 8, 16, 12, 12, 8, 0, 0, 16, 
+    8, 16, 16, 4, 16, 0, 0, 0, 8, 16, 12, 12, 8, 
+    4, 0, 16, 8, 16, 12, 8, 16, 4, 0, 0, 8, 16 
+};
+constexpr i32 instructionToBranchCycles[] = {
+    4, 12, 8, 8, 4, 4, 8, 4, 20, 8, 8, 8, 4, 4, 8, 4,
+    4, 12, 8, 8, 4, 4, 8, 4, 12, 8, 8, 8, 4, 4, 8, 4, 
+    12, 12, 8, 8, 4, 4, 8, 4, 12, 8, 8, 8, 4, 4, 8, 4, 
+    12, 12, 8, 8, 12, 12, 12, 4, 12, 8, 8, 8, 4, 4, 8, 
+    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 
+    4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 
+    4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 8, 8, 
+    8, 8, 8, 8, 4, 8, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 
+    4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 
+    4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 
+    4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 
+    8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 20, 12, 16, 16, 24, 16, 
+    8, 16, 20, 16, 16, 0, 24, 24, 8, 16, 20, 12, 16, 0, 
+    24, 16, 8, 16, 20, 16, 16, 0, 24, 0, 8, 16, 12, 12, 
+    8, 0, 0, 16, 8, 16, 16, 4, 16, 0, 0, 0, 8, 16, 12, 
+    12, 8, 4, 0, 16, 8, 16, 12, 8, 16, 4, 0, 0, 8, 16
+};
+constexpr i32 cbInstructionCycles[] = {
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 12, 8, 8, 8, 8, 8, 8, 8, 12, 8,
+    8, 8, 8, 8, 8, 8, 12, 8, 8, 8, 8, 8, 8, 8, 12, 8, 
+    8, 8, 8, 8, 8, 8, 12, 8, 8, 8, 8, 8, 8, 8, 12, 8, 
+    8, 8, 8, 8, 8, 8, 12, 8, 8, 8, 8, 8, 8, 8, 12, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
+    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8
+};
 static void executeCurrentInstruction(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
     u8 instructionToExecute = cpu->executingInstruction;
 
@@ -1313,7 +1369,9 @@ static void executeCurrentInstruction(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug)
 
     case 0x10: { //STOP 0
         //TODO: to be implemented
-        CO_ASSERT(readByte(cpu->PC + 1, mmu) == 0); //next byte should 0
+        if (readByte(cpu->PC + 1, mmu) != 0) {
+           cpu->didHitIllegalOpcode = true;
+        }
         cpu->PC += 2;
     } break;
 
@@ -1987,6 +2045,7 @@ static void executeCurrentInstruction(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug)
 
     case 0xF3: {                                              //DI
         cpu->enableInterrupts = false;
+        cpu->willEnableInterrupts = false;
         cpu->PC += 1;
     } break;
 
@@ -2013,7 +2072,7 @@ static void executeCurrentInstruction(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug)
     } break;
 
     case 0xFB: {                                              //EI
-        cpu->enableInterrupts = true;
+        cpu->willEnableInterrupts = true;
         cpu->PC += 1;
     } break;
 
@@ -2034,61 +2093,6 @@ static void executeCurrentInstruction(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug)
 //addresses of interrupt service routines in order of priority
 constexpr u16 interruptRoutineAddresses[] = {0x40, 0x48, 0x50, 0x58, 0x60};
 
-constexpr i32 instructionToCycles[] = {
-    4, 12, 8, 8, 4, 4, 8, 4, 20, 8, 8, 8, 4, 4, 8, 4,
-    4, 12, 8, 8, 4, 4, 8, 4, 12, 8, 8, 8, 4, 4, 8, 4, 
-    8, 12, 8, 8, 4, 4, 8, 4, 8, 8, 8, 8, 4, 4, 8, 4, 
-    8, 12, 8, 8, 12, 12, 12, 4, 8, 8, 8, 8, 4, 4, 8, 
-    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
-    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
-    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
-    4, 8, 8, 8, 8, 8, 8, 4, 8, 4, 4, 4, 4, 4, 4, 8,
-    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
-    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
-    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
-    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 
-    4,  8, 12, 12, 16, 12, 16, 8, 16, 8, 16, 12, 0, 
-    12, 24, 8, 16, 8, 12, 12, 0, 12, 16, 8, 16, 8, 
-    16, 12, 0, 12, 0, 8, 16, 12, 12, 8, 0, 0, 16, 
-    8, 16, 16, 4, 16, 0, 0, 0, 8, 16, 12, 12, 8, 
-    4, 0, 16, 8, 16, 12, 8, 16, 4, 0, 0, 8, 16 
-};
-constexpr i32 instructionToBranchCycles[] = {
-    4, 12, 8, 8, 4, 4, 8, 4, 20, 8, 8, 8, 4, 4, 8, 4,
-    4, 12, 8, 8, 4, 4, 8, 4, 12, 8, 8, 8, 4, 4, 8, 4, 
-    12, 12, 8, 8, 4, 4, 8, 4, 12, 8, 8, 8, 4, 4, 8, 4, 
-    12, 12, 8, 8, 12, 12, 12, 4, 12, 8, 8, 8, 4, 4, 8, 
-    4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 
-    4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 
-    4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 8, 8, 
-    8, 8, 8, 8, 4, 8, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 
-    4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 
-    4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 
-    4, 8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 
-    8, 4, 4, 4, 4, 4, 4, 4, 8, 4, 20, 12, 16, 16, 24, 16, 
-    8, 16, 20, 16, 16, 0, 24, 24, 8, 16, 20, 12, 16, 0, 
-    24, 16, 8, 16, 20, 16, 16, 0, 24, 0, 8, 16, 12, 12, 
-    8, 0, 0, 16, 8, 16, 16, 4, 16, 0, 0, 0, 8, 16, 12, 
-    12, 8, 4, 0, 16, 8, 16, 12, 8, 16, 4, 0, 0, 8, 16
-};
-constexpr i32 cbInstructionCycles[] = {
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 12, 8, 8, 8, 8, 8, 8, 8, 12, 8,
-    8, 8, 8, 8, 8, 8, 12, 8, 8, 8, 8, 8, 8, 8, 12, 8, 
-    8, 8, 8, 8, 8, 8, 12, 8, 8, 8, 8, 8, 8, 8, 12, 8, 
-    8, 8, 8, 8, 8, 8, 12, 8, 8, 8, 8, 8, 8, 8, 12, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8, 
-    8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8
-};
 
 static bool willBranch(CPU *cpu) {
     switch (cpu->executingInstruction) {
@@ -2135,19 +2139,88 @@ static void loadNextInstruction(CPU *cpu, MMU *mmu) {
     if (cpu->executingInstruction == 0xCB) {
         u8 cbInst = readByte(cpu->PC+1, mmu);
         cpu->executingInstruction = readByte(cpu->PC, mmu);
-        cpu->branchCyclesInstructionWillTake = 
-                cpu->cyclesInstructionWillTake = 
-                cbInstructionCycles[cbInst];
+        cpu->cyclesInstructionWillTake =  cbInstructionCycles[cbInst];
     }
     else {
-        cpu->cyclesInstructionWillTake = instructionToCycles[cpu->executingInstruction];
-        cpu->branchCyclesInstructionWillTake = instructionToBranchCycles[cpu->executingInstruction];
+        if (willBranch(cpu)) {
+            cpu->cyclesInstructionWillTake = instructionToBranchCycles[cpu->executingInstruction];
+        }
+        else {
+            cpu->cyclesInstructionWillTake = instructionToCycles[cpu->executingInstruction];
+        }
     }
 }
 
-static void stepCPU(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
+//static void stepCPU(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
+//    cpu->totalCycles += CYCLES_PER_STEP;
+//    if (cpu->willEnableInterrupts) {
+//        cpu->enableInterrupts = true;
+//        cpu->willEnableInterrupts = false;
+//    }
+//    u8 interruptsToHandle = mmu->enabledInterrupts & mmu->requestedInterrupts;
+    
+//    if (!cpu->isHalted) {
+//        cpu->cyclesSinceLastInstruction += CYCLES_PER_STEP;
+
+//        if (cpu->cyclesSinceLastInstruction >= cpu->cyclesInstructionWillTake) {
+            
+//            if (cpu->isPreparingToInterrupt) {
+//                CO_ASSERT(interruptsToHandle);
+//                foriarr (interruptRoutineAddresses) {
+//                    if (isBitSet((int)i, interruptsToHandle)) {
+//                        pushOnToStack(cpu->PC, &cpu->SP, mmu, gbDebug);
+//                        cpu->PC = interruptRoutineAddresses[i];
+//                        clearBit((int)i, &mmu->requestedInterrupts);
+//                        cpu->enableInterrupts = false;
+//                        cpu->isPreparingToInterrupt = false;
+                        
+//                        loadNextInstruction(cpu, mmu);
+                        
+//                        break;
+//                    }
+//                }
+//            }
+//            else if (interruptsToHandle != 0 && cpu->enableInterrupts) {
+//                cpu->cyclesSinceLastInstruction = 0;
+//                cpu->cyclesInstructionWillTake = 20;
+//                cpu->branchCyclesInstructionWillTake = 20;
+//                cpu->isPreparingToInterrupt = true;
+//            }
+//            else if (cpu->cyclesInstructionWillTake == cpu->branchCyclesInstructionWillTake) {
+//                executeCurrentInstruction(cpu, mmu, gbDebug);
+//                loadNextInstruction(cpu, mmu);
+//            }
+//            else if (willBranch(cpu)) {
+//               cpu->cyclesInstructionWillTake = cpu->branchCyclesInstructionWillTake; 
+//            }
+//            else {
+//                executeCurrentInstruction(cpu, mmu, gbDebug);
+//                loadNextInstruction(cpu, mmu);
+//            }
+//        }
+
+
+//    }
+//    else if (interruptsToHandle != 0) {
+//        cpu->isHalted = false;
+//        if (cpu->enableInterrupts) {
+//            cpu->cyclesSinceLastInstruction = 0;
+//            cpu->cyclesInstructionWillTake = 20;
+//            cpu->branchCyclesInstructionWillTake = 20;
+//            cpu->isPreparingToInterrupt = true;
+//        }
+//        else {
+//            loadNextInstruction(cpu, mmu);
+//        }
+//    }
+//}
+
+static bool stepCPU(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
     cpu->totalCycles += CYCLES_PER_STEP;
-    u8 interruptsToHandle = mmu->enabledInterrupts & mmu->requestedInterrupts;
+    if (cpu->willEnableInterrupts) {
+        cpu->enableInterrupts = true;
+        cpu->willEnableInterrupts = false;
+    }
     
     if (!cpu->isHalted) {
         cpu->cyclesSinceLastInstruction += CYCLES_PER_STEP;
@@ -2155,10 +2228,12 @@ static void stepCPU(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
         if (cpu->cyclesSinceLastInstruction >= cpu->cyclesInstructionWillTake) {
             
             if (cpu->isPreparingToInterrupt) {
+                u8 interruptsToHandle = mmu->enabledInterrupts & mmu->requestedInterrupts;
                 CO_ASSERT(interruptsToHandle);
                 foriarr (interruptRoutineAddresses) {
                     if (isBitSet((int)i, interruptsToHandle)) {
                         pushOnToStack(cpu->PC, &cpu->SP, mmu, gbDebug);
+                        //TODO: put this in interrupt handler at the end of step()
                         cpu->PC = interruptRoutineAddresses[i];
                         clearBit((int)i, &mmu->requestedInterrupts);
                         cpu->enableInterrupts = false;
@@ -2170,129 +2245,20 @@ static void stepCPU(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
                     }
                 }
             }
-            else if (interruptsToHandle != 0 && cpu->enableInterrupts) {
-                cpu->cyclesSinceLastInstruction = 0;
-                cpu->cyclesInstructionWillTake = 20;
-                cpu->branchCyclesInstructionWillTake = 20;
-                cpu->isPreparingToInterrupt = true;
-            }
-            else if (cpu->cyclesInstructionWillTake == cpu->branchCyclesInstructionWillTake) {
-                executeCurrentInstruction(cpu, mmu, gbDebug);
-                
-                loadNextInstruction(cpu, mmu);
-            }
-            else if (willBranch(cpu)) {
-               cpu->cyclesInstructionWillTake = cpu->branchCyclesInstructionWillTake; 
-            }
             else {
                 executeCurrentInstruction(cpu, mmu, gbDebug);
                 loadNextInstruction(cpu, mmu);
+                return true;
             }
         }
-
-
     }
-    else if (interruptsToHandle != 0) {
-        cpu->isHalted = false;
-        if (cpu->enableInterrupts) {
-            cpu->cyclesSinceLastInstruction = 0;
-            cpu->cyclesInstructionWillTake = 20;
-            cpu->branchCyclesInstructionWillTake = 20;
-            cpu->isPreparingToInterrupt = true;
-        }
-        else {
-            loadNextInstruction(cpu, mmu);
-        }
+    else {
+        return true;
     }
+    
+    return false;
 }
-//static void stepCPU(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
-//    cpu->totalCycles += CYCLES_PER_STEP;
-    
-//    if (!cpu->isHalted) {
-//        cpu->cyclesSinceLastInstruction += CYCLES_PER_STEP;
-//    }
-    
-//    u8 interruptsToHandle = mmu->enabledInterrupts & mmu->requestedInterrupts;
-//    if (!cpu->isPreparingToInterrupt && interruptsToHandle > 0) {
-//        cpu->isHalted = false;
-//        if (cpu->enableInterrupts) {
-//            cpu->cyclesSinceLastInstruction = 0;
-//            cpu->cyclesInstructionWillTake = 20;
-//            cpu->branchCyclesInstructionWillTake = 20;
-//            cpu->isPreparingToInterrupt = true;
-//        }
-//    }
 
-//    if (!cpu->isHalted) {
-
-//        if (cpu->cyclesSinceLastInstruction >= cpu->cyclesInstructionWillTake) {
-            
-//            if (cpu->isPreparingToInterrupt) {
-//                foriarr (interruptRoutineAddresses) {
-//                    if (isBitSet((int)i, interruptsToHandle)) {
-//                        pushOnToStack(cpu->PC, &cpu->SP, mmu, gbDebug);
-//                        cpu->PC = interruptRoutineAddresses[i];
-//                        clearBit((int)i, &mmu->requestedInterrupts);
-//                        cpu->enableInterrupts = false;
-//                        cpu->isPreparingToInterrupt = false;
-                        
-//                        cpu->executingInstruction = readByte(cpu->PC, mmu);
-//                        cpu->cyclesSinceLastInstruction = 0;
-//                        if (cpu->executingInstruction == 0xCB) {
-//                            u8 cbInst = readByte(cpu->PC+1, mmu);
-//                            cpu->executingInstruction = readByte(cpu->PC, mmu);
-//                            cpu->branchCyclesInstructionWillTake = 
-//                                    cpu->cyclesInstructionWillTake = 
-//                                    cbInstructionCycles[cbInst];
-//                        }
-//                        else {
-//                            cpu->cyclesInstructionWillTake = instructionToCycles[cpu->executingInstruction];
-//                            cpu->branchCyclesInstructionWillTake = instructionToBranchCycles[cpu->executingInstruction];
-//                        }
-                        
-//                        break;
-//                    }
-//                }
-//            }
-//            else if (cpu->cyclesInstructionWillTake == cpu->branchCyclesInstructionWillTake) {
-//                executeCurrentInstruction(cpu, mmu, gbDebug);
-                
-//                cpu->executingInstruction = readByte(cpu->PC, mmu);
-//                cpu->cyclesSinceLastInstruction = 0;
-//                if (cpu->executingInstruction == 0xCB) {
-//                    u8 cbInst = readByte(cpu->PC+1, mmu);
-//                    cpu->branchCyclesInstructionWillTake = 
-//                            cpu->cyclesInstructionWillTake = 
-//                            cbInstructionCycles[cbInst];
-//                }
-//                else {
-//                    cpu->cyclesInstructionWillTake = instructionToCycles[cpu->executingInstruction];
-//                    cpu->branchCyclesInstructionWillTake = instructionToBranchCycles[cpu->executingInstruction];
-//                }
-//            }
-//            else if (willBranch(cpu)) {
-//               cpu->cyclesInstructionWillTake = cpu->branchCyclesInstructionWillTake; 
-//            }
-//            else {
-//                executeCurrentInstruction(cpu, mmu, gbDebug);
-                
-//                cpu->executingInstruction = readByte(cpu->PC, mmu);
-//                cpu->cyclesSinceLastInstruction = 0;
-//                if (cpu->executingInstruction == 0xCB) {
-//                    u8 cbInst = readByte(cpu->PC+1, mmu);
-//                    cpu->branchCyclesInstructionWillTake = 
-//                            cpu->cyclesInstructionWillTake = 
-//                            cbInstructionCycles[cbInst];
-//                }
-//                else {
-//                    cpu->cyclesInstructionWillTake = instructionToCycles[cpu->executingInstruction];
-//                    cpu->branchCyclesInstructionWillTake = instructionToBranchCycles[cpu->executingInstruction];
-//                }
-//            }
-//        }
-
-
-//    }
 
 static void recordDebugState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
     if (gbDebug->numDebugStates < ARRAY_LEN(gbDebug->prevGBDebugStates)) {
@@ -2389,6 +2355,22 @@ static void recordState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug) {
     profileEnd(profileState);
 }
 
+
+static void requestInterruptForLCD(InterruptRequestedBit interrupt, u8* outRequestedInterrupts, LCD *lcd) {
+    switch (interrupt) {
+    case InterruptRequestedBit::LCDRequested: {
+        //lcd->isLCDInterruptRequested = 1;
+        setBit((int)InterruptRequestedBit::LCDRequested, outRequestedInterrupts);
+    } break;
+    case InterruptRequestedBit::VBlankRequested: {
+        lcd->isVBlankInterruptRequested = 1;
+    } break;
+    default: {
+       INVALID_CODE_PATH(); 
+    } break;
+    }
+}
+
 static void nextScanLine(LCD *lcd, u8 *outRequestedInterrupts) {
     lcd->ly = (lcd->ly == MAX_LY) ? 0 : (lcd->ly + 1);
 
@@ -2397,7 +2379,7 @@ static void nextScanLine(LCD *lcd, u8 *outRequestedInterrupts) {
 
         //request lcdc interrupt if enabled
         if (isBitSet((int)LCDCBit::LY_LYCCoincidenceInterrupt, lcd->stat)) {
-            setBit((int)InterruptRequestedBit::LCDRequested, outRequestedInterrupts);
+            requestInterruptForLCD(InterruptRequestedBit::LCDRequested, outRequestedInterrupts, lcd);
         }
     }
     else {
@@ -2405,6 +2387,30 @@ static void nextScanLine(LCD *lcd, u8 *outRequestedInterrupts) {
     }
 }
 
+//static void changeToNewLCDMode(LCDMode newMode, LCD *lcd) {
+//    lcd->mode = newMode;
+//    lcd->stat = (lcd->stat & 0xFC) | (u8)newMode;
+
+//    switch (newMode) {
+//    case LCDMode::ScanOAM:
+//        if (isBitSet((int)LCDCBit::OAMInterrupt, lcd->stat)) {
+//            requestInterruptForLCD(InterruptRequestedBit::LCDRequested, lcd);
+//        } break;
+//    case LCDMode::HBlank:
+//        if (isBitSet((int)LCDCBit::HBlankInterrupt, lcd->stat)) {
+//            requestInterruptForLCD(InterruptRequestedBit::LCDRequested, lcd);
+//        } break;
+//    case LCDMode::VBlank:
+//        if (isBitSet((int)LCDCBit::VBlankInterrupt, lcd->stat)) {
+//            requestInterruptForLCD(InterruptRequestedBit::LCDRequested, lcd);
+//        }
+//        requestInterruptForLCD(InterruptRequestedBit::VBlankRequested, lcd);
+
+//        break;
+//    default:
+//        break;
+//    }
+//}
 static void changeToNewLCDMode(LCDMode newMode, LCD *lcd, u8* outRequestedInterrupts) {
     lcd->mode = newMode;
     lcd->stat = (lcd->stat & 0xFC) | (u8)newMode;
@@ -2422,8 +2428,9 @@ static void changeToNewLCDMode(LCDMode newMode, LCD *lcd, u8* outRequestedInterr
         if (isBitSet((int)LCDCBit::VBlankInterrupt, lcd->stat)) {
             setBit((int)InterruptRequestedBit::LCDRequested, outRequestedInterrupts);
         }
-        setBit((int)InterruptRequestedBit::VBlankRequested, outRequestedInterrupts);
+//        setBit((int)InterruptRequestedBit::VBlankRequested, outRequestedInterrupts);
 
+        lcd->isVBlankInterruptRequested = 1;
         break;
     default:
         break;
@@ -2451,6 +2458,25 @@ static ColorID colorIDFromTileReference(u8 tileReference, u8 currXPositionInSpri
 
     ret = (ColorID)((highBit * 2) + lowBit);
     return ret;
+}
+
+static void insertSpriteToDraw(const Sprite *toInsert, Sprite *spritesArray, i64 size) {
+    i64 indexToInsert = size;
+    fori (size) {
+        if (spritesArray[i].x < toInsert->x) {
+           indexToInsert = i; 
+           break;
+        }
+    }
+    if (indexToInsert == size) {
+        spritesArray[size] = *toInsert;
+    }
+    else {
+       for (i64 i = size - 1; i >= indexToInsert; i--) {
+           spritesArray[i+1] = spritesArray[i];
+       }
+       spritesArray[indexToInsert] = *toInsert;
+    }
 }
 
 static void drawScanLine(LCD *lcd) {
@@ -2586,12 +2612,9 @@ static void drawScanLine(LCD *lcd) {
 
         i64 numSpritesToDraw = 0, numSpritesOnScanLine = 0;
 
-        Sprite *maxSprite = spritesToDraw;
-        i64 indexLeftOff = -1;
         u8 minSpriteY = (lcd->spriteHeight == SpriteHeight::Short) ? SHORT_SPRITE_HEIGHT : 0;
         for (i64 i = 0; i < ARRAY_LEN(lcd->oam); i += 4) {
             if (numSpritesOnScanLine >= MAX_SPRITES_PER_SCANLINE) {
-                indexLeftOff = i;
                 break;
             }
             //TODO: need an array of oam where sprites are sorted by X
@@ -2606,68 +2629,23 @@ static void drawScanLine(LCD *lcd) {
             if (lcd->ly + minSpriteY < spriteY  && lcd->ly + MAX_SPRITE_HEIGHT >= spriteY) {
 
                 numSpritesOnScanLine++;
-
-                if (spriteX - MAX_SPRITE_WIDTH < SCREEN_WIDTH && spriteX >= 1) {
-                    auto sprite = &spritesToDraw[numSpritesToDraw++];
-                    forj (numSpritesToDraw) {
-                        if (spritesToDraw[j].x == spriteX) {
-                            sprite->isLowPriority = true;
-                            break;
-                        }
-                    }
-                    sprite->x = spriteX;
-                    sprite->y = spriteY;
-                    sprite->tileReference = lcd->oam[i + 2];
-                    sprite->flags = lcd->oam[i + 3];
-
-                    if (maxSprite->x < spriteX) {
-                        maxSprite = sprite;
+                bool isCovered = false;
+                forj (numSpritesToDraw) {
+                    if (spritesToDraw[j].x == spriteX) {
+                        isCovered = true;
+                        break;
                     }
                 }
-            }
-        }
-        if (indexLeftOff >= 0) {
-            for (i64 i = indexLeftOff; i < ARRAY_LEN(lcd->oam); i += 4) {
-                u8 spriteY = lcd->oam[i];
-                u8 spriteX = lcd->oam[i + 1];
 
-                if (lcd->ly + minSpriteY < spriteY && lcd->ly + MAX_SPRITE_HEIGHT >= spriteY &&
-                        spriteX - MAX_SPRITE_WIDTH < SCREEN_WIDTH &&
-                        spriteX >= 1) {
-                    Sprite *sprite = nullptr;
-
-                    forj (numSpritesToDraw) {
-                        if (spritesToDraw[j].isLowPriority) {
-                            sprite = &spritesToDraw[j];
-                            break;
-                        }
-                    }
-
-                    if (!sprite) {
-                        if (spriteX >= maxSprite->x) {
-                            continue;
-                        }
-                        sprite = maxSprite;
-                    }
-
-                    sprite->isLowPriority = false;
-                    forj (numSpritesToDraw) {
-                        if (spritesToDraw[j].x == spriteX) {
-                            sprite->isLowPriority = true;
-                            break;
-                        }
-                    }
-                    sprite->x = spriteX;
-                    sprite->y = spriteY;
-                    sprite->tileReference = lcd->oam[i + 2];
-                    sprite->flags = lcd->oam[i + 3];
-
-                    maxSprite = spritesToDraw;
-                    forjarr (spritesToDraw) {
-                        if (maxSprite->x < spritesToDraw[j].x) {
-                            maxSprite = &spritesToDraw [j];
-                        }
-                    }
+                if (!isCovered && spriteX - MAX_SPRITE_WIDTH < SCREEN_WIDTH && spriteX >= 1) {
+                    Sprite sprite;
+                    sprite.x = spriteX;
+                    sprite.y = spriteY;
+                    sprite.tileReference = lcd->oam[i + 2];
+                    sprite.flags = lcd->oam[i + 3];
+                    
+                    insertSpriteToDraw(&sprite, spritesToDraw, numSpritesToDraw);
+                    numSpritesToDraw++;
                 }
             }
         }
@@ -2759,6 +2737,18 @@ static void stepLCD(LCD *lcd, u8 *outRequestedInterrupts, GameBoyDebug *gbDebug)
     profileStart("Step LCD", profileState);
     if (lcd->isEnabled) {
         lcd->modeClock += CYCLES_PER_STEP;
+//        if (lcd->isLCDInterruptRequested--) {
+//            if (lcd->isLCDInterruptRequested == 0) {
+//            setBit((int)InterruptRequestedBit::LCDRequested, outRequestedInterrupts);
+//            }
+//            lcd->isLCDInterruptRequested = 0;
+//        }
+        if (lcd->isVBlankInterruptRequested--) {
+            if (lcd->isVBlankInterruptRequested == 0) {
+            setBit((int)InterruptRequestedBit::VBlankRequested, outRequestedInterrupts);
+            }
+//            lcd->isVBlankInterruptRequested = 0;
+        }
 
         switch (lcd->mode) {
         case LCDMode::HBlank:
@@ -2932,10 +2922,12 @@ static void stepLength(MMU::SquareWave1 *sq1, MMU::SquareWave2 *sq2, MMU::Wave *
 #if CO_DEBUG
 extern "C"
 #endif
-void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume) {
+void machineStep(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume) {
 
     u8 tmpRequestedInterrupts = 0;
 
+    
+    bool isAtStartOfNewInstruction = false;
     //step cpu with debug on
     if (gbDebug->numBreakpoints > 0 && gbDebug->isEnabled ) {
 
@@ -2944,7 +2936,7 @@ void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume) {
             recordDebugState(cpu, mmu, gbDebug);
         }           
         CPU tmpCPU = *cpu;
-        stepCPU(cpu, mmu, gbDebug);
+        isAtStartOfNewInstruction = stepCPU(cpu, mmu, gbDebug);
 
         //get changed registers 
         foriarr (gbDebug->breakpoints) {
@@ -3024,7 +3016,7 @@ void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume) {
     }
     else {
         //step cpu with debug off
-        stepCPU(cpu, mmu, gbDebug);
+        isAtStartOfNewInstruction = stepCPU(cpu, mmu, gbDebug);
     }
 
     profileStart("Step sound", profileState);
@@ -3107,128 +3099,6 @@ void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume) {
         noise->frequencyClock -= noise->tonePeriod;
     }
 
-//    //sweep
-//    int tmpCyclesSinceLastFrameSeq = mmu->cyclesSinceLastFrameSequencer;
-//    while (tmpCyclesSinceLastFrameSeq >= FRAME_SEQUENCER_PERIOD) {
-//        mmu->ticksSinceLastSweep++;
-//        while (mmu->ticksSinceLastSweep >= SWEEP_TIMER_PERIOD) {
-//            sq1->sweepClock++; 
-//            while (sq1->sweepClock >= sq1->sweepPeriod && sq1->sweepPeriod > 0) {
-//                if (sq1->isEnabled && sq1->isSweepEnabled && sq1->sweepShift != 0) {
-//                    sq1->sweepShadowReg >>= sq1->sweepShift;
-//                    sq1->sweepShadowReg = (sq1->isSweepNegated) ?
-//                                sq1->toneFrequency - sq1->sweepShadowReg :
-//                                sq1->toneFrequency + sq1->sweepShadowReg;
-
-//                    if (sq1->sweepShadowReg <= 2047) {
-//                        setToneFrequencyForSquareWave(sq1->sweepShadowReg, &sq1->toneFrequency, &sq1->tonePeriod);
-
-//                        u16 tmpSweep = sq1->sweepShadowReg >> sq1->sweepShift;
-//                        tmpSweep = (sq1->isSweepNegated) ?
-//                                    sq1->toneFrequency - tmpSweep :
-//                                    sq1->toneFrequency + tmpSweep;
-//                        if (tmpSweep > 2047) {
-//                            sq1->isEnabled = false;
-//                        }
-//                    }
-//                    else {
-//                        sq1->isEnabled = false;
-//                    }
-//                }
-
-//                sq1->sweepClock -= sq1->sweepPeriod;
-//            }
-//            mmu->ticksSinceLastSweep -= SWEEP_TIMER_PERIOD;
-//        }
-//        tmpCyclesSinceLastFrameSeq -= FRAME_SEQUENCER_PERIOD;
-//    }
-
-
-//    //frame sequencer
-//    while (mmu->cyclesSinceLastFrameSequencer >= FRAME_SEQUENCER_PERIOD) {
-//        //length counter
-//        mmu->ticksSinceLastLengthCounter++;
-//        while (mmu->ticksSinceLastLengthCounter >= LENGTH_TIMER_PERIOD) {
-//            if (sq1->lengthCounter > 0 && sq1->isLengthCounterEnabled) {
-//                sq1->lengthCounter--;
-
-//                if (sq1->lengthCounter <= 0) {
-//                    sq1->isEnabled = false;
-//                }
-//            }
-//            if (sq2->lengthCounter > 0 && sq2->isLengthCounterEnabled) {
-//                sq2->lengthCounter--;
-
-//                if (sq2->lengthCounter <= 0) {
-//                    sq2->isEnabled = false;
-//                }
-//            }
-//            if (wave->lengthCounter > 0 && wave->isLengthCounterEnabled) {
-//                wave->lengthCounter--;
-
-//                if (wave->lengthCounter <= 0) {
-//                    wave->isEnabled = false;
-//                }
-//            }
-//            if (noise->lengthCounter > 0 && noise->isLengthCounterEnabled) {
-//                noise->lengthCounter--;
-
-//                if (noise->lengthCounter <= 0) {
-//                    noise->isEnabled = false;
-//                }
-//            }
-//            mmu->ticksSinceLastLengthCounter -= LENGTH_TIMER_PERIOD;
-//        }
-
-//        //envelope
-//        mmu->ticksSinceLastEnvelop++;
-//        while (mmu->ticksSinceLastEnvelop >= VOLUME_ENVELOPE_TIMER_PERIOD ) {
-
-//            if (sq1->volumeEnvelopPeriod > 0) {
-
-//                sq1->volumeEnvelopeClock++;
-//                while (sq1->volumeEnvelopeClock >= sq1->volumeEnvelopPeriod)  {
-//                    if (sq1->shouldIncreaseVolume && sq1->currentVolume < 15) {
-//                        sq1->currentVolume++;
-//                    }
-//                    else if (sq1->currentVolume > 0) {
-//                        sq1->currentVolume--;
-//                    }
-//                    sq1->volumeEnvelopeClock -= sq1->volumeEnvelopPeriod;
-//                }
-//            }
-//            if (sq2->volumeEnvelopPeriod > 0) {
-
-//                sq2->volumeEnvelopeClock++;
-//                while (sq2->volumeEnvelopeClock >= sq2->volumeEnvelopPeriod)  {
-//                    if (sq2->shouldIncreaseVolume && sq2->currentVolume < 15) {
-//                        sq2->currentVolume++;
-//                    }
-//                    else if (sq2->currentVolume > 0) {
-//                        sq2->currentVolume--;
-//                    }
-//                    sq2->volumeEnvelopeClock -= sq2->volumeEnvelopPeriod;
-//                }
-//            }
-//            if (noise->volumeEnvelopPeriod > 0) {
-
-//                noise->volumeEnvelopeClock++;
-//                while (noise->volumeEnvelopeClock >= noise->volumeEnvelopPeriod)  {
-//                    if (noise->shouldIncreaseVolume && noise->currentVolume < 15) {
-//                        noise->currentVolume++;
-//                    }
-//                    else if (noise->currentVolume > 0) {
-//                        noise->currentVolume--;
-//                    }
-//                    noise->volumeEnvelopeClock -= noise->volumeEnvelopPeriod;
-//                }
-//            }
-
-//            mmu->ticksSinceLastEnvelop -= VOLUME_ENVELOPE_TIMER_PERIOD;
-//        }
-
-//        mmu->cyclesSinceLastFrameSequencer -= FRAME_SEQUENCER_PERIOD;
-//    }
 
     SoundFrame frame;
 
@@ -3372,7 +3242,6 @@ void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume) {
             else {
                 mmu->isDMAOccurring = false;
                 mmu->cyclesSinceLastDMACopy = 0;
-                mmu->currentDMAAddress = 0;
             }
         }
 #undef DMA_CYCLES_PER_BYTE 
@@ -3406,6 +3275,22 @@ void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume) {
     }
 
     mmu->requestedInterrupts |= tmpRequestedInterrupts;
+    
+    
+    if (isAtStartOfNewInstruction){
+        u8 interruptsToHandle = mmu->enabledInterrupts & mmu->requestedInterrupts;
+        if (interruptsToHandle != 0) {
+            cpu->isHalted = false;
+            if (cpu->enableInterrupts) {
+                cpu->cyclesSinceLastInstruction = 0;
+                cpu->cyclesInstructionWillTake = 20;
+                cpu->isPreparingToInterrupt = true;
+            }
+            else {
+                loadNextInstruction(cpu, mmu);
+            }
+        }
+    }
 
     if (cpu->didHitIllegalOpcode || didHitBreakpoint(gbDebug)) {
         return;
@@ -3431,6 +3316,7 @@ void reset(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programState
     gbDebug->hitBreakpoint = nullptr;
     *cpu = {};
     cpu->isPaused = wasPaused;
+    gbDebug->customCycleCounterStart = 0;
 
     u8 *tmpROM = mmu->romData;
     u8 *tmpRAM = mmu->cartRAM;
@@ -3558,8 +3444,10 @@ void runFrame(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programSt
 #define WAS_PRESSED(button) (input->newState.button == true && input->oldState.button == false)
 #define IS_DOWN(button) (input->newState.button)
         if (cpu->isPaused) {
-            if (isActionPressed(Input::Action::DebuggerStep, input)) {
-                step(cpu, mmu, gbDebug, programState->soundState.volume);
+            if (isActionPressed(Input::Action::DebuggerStep, input) && cpu->isPaused) {
+                do {
+                    machineStep(cpu, mmu, gbDebug, programState->soundState.volume);
+                } while (cpu->cyclesSinceLastInstruction != 0);
             }
         }
 
@@ -3662,7 +3550,7 @@ void runFrame(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug, ProgramState *programSt
         lcd->numScreensToSkip = (cyclesToExecute - cyclesLeftForThisFrame) / (TOTAL_SCANLINE_DURATION * (MAX_LY+1));
 
         while (cyclesToExecute > 0) {
-            step(cpu, mmu, gbDebug, programState->soundState.volume);
+            machineStep(cpu, mmu, gbDebug, programState->soundState.volume);
             cpu->cylesExecutedThisFrame += CYCLES_PER_STEP;
             cyclesToExecute -= CYCLES_PER_STEP;
 

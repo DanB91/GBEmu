@@ -43,7 +43,9 @@ build_gbemu() {
             rm $APP_DIR/Contents/Info.plist.bak &&
             cp resources/GBEmuIcon.icns $APP_DIR/Contents/Resources &&
             cp -r resources/SDL2.framework $APP_DIR/Contents/Frameworks &&
-            install_name_tool $APP_DIR/Contents/MacOS/gbemu -add_rpath "@loader_path/../Frameworks"
+            install_name_tool $APP_DIR/Contents/MacOS/gbemu -add_rpath "@loader_path/../Frameworks" &&
+            install_name_tool build/gbemu -add_rpath "@loader_path/../resources"
+            
 }
 if [[ $1 == "help" ]]; then
     printUsage

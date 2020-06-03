@@ -419,28 +419,29 @@ struct SerializingState {
        ADD(data->waveChannel, SaveStateVersion::Initial);
        ADD(data->noiseChannel, SaveStateVersion::Initial);
        
-//       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
-//           i32, ticksSinceLastLengthCounter, 0);
-//       if (ticksSinceLastLengthCounter > 0) {
-//           //TODO:
-//       }
-//       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
-//           i32, ticksSinceLastEnvelop, 0);
-//       if (ticksSinceLastEnvelop > 0) {
-//           //TODO:
-//       }
-//       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
-//           i32, ticksSinceLastSweep, 0);
-//       if (ticksSinceLastSweep > 0) {
-//          //TODO: 
-//       }
-//       //TODO: figure out step 
+       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
+           i32, ticksSinceLastLengthCounter, 0);
+       if (ticksSinceLastLengthCounter > 0) {
+           //TODO:
+       }
+       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
+           i32, ticksSinceLastEnvelop, 0);
+       if (ticksSinceLastEnvelop > 0) {
+           //TODO:
+       }
+       REM(SaveStateVersion::Initial, SaveStateVersion::CycleAccurateUpdate,
+           i32, ticksSinceLastSweep, 0);
+       if (ticksSinceLastSweep > 0) {
+          //TODO: 
+       }
+       //TODO: figure out step 
            
-       ADD(data->ticksSinceLastLengthCounter, SaveStateVersion::Initial);
-       ADD(data->ticksSinceLastEnvelop, SaveStateVersion::Initial);
-       ADD(data->ticksSinceLastSweep, SaveStateVersion::Initial);
+//       ADD(data->ticksSinceLastLengthCounter, SaveStateVersion::Initial);
+//       ADD(data->ticksSinceLastEnvelop, SaveStateVersion::Initial);
+//       ADD(data->ticksSinceLastSweep, SaveStateVersion::Initial);
        
        ADD(data->cyclesSinceLastSoundSample, SaveStateVersion::Initial);
+       //TODO fails here when loading old save from megaman
        ADD(data->cyclesSinceLastFrameSequencer, SaveStateVersion::Initial);
        ADD(data->masterLeftVolume, SaveStateVersion::Initial);
        ADD(data->masterRightVolume, SaveStateVersion::Initial);
@@ -473,7 +474,6 @@ struct SerializingState {
         ADD(data->isPreparingToInterrupt, SaveStateVersion::CycleAccurateUpdate);
         ADD(data->cyclesSinceLastInstruction, SaveStateVersion::CycleAccurateUpdate);
         ADD(data->cyclesInstructionWillTake, SaveStateVersion::CycleAccurateUpdate);
-        ADD(data->branchCyclesInstructionWillTake, SaveStateVersion::CycleAccurateUpdate);
         
        return FileSystemResultCode::OK;
     }

@@ -17,12 +17,19 @@ bool didHitBreakpoint(GameBoyDebug *gbDebug) {
     return bp && bp->isUsed && !bp->isDisabled;
 }
 void continueFromBreakPoint(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *programState) {
+    if (!cpu->isPaused) {
+        return;
+    }
     gbDebug->hitBreakpoint = nullptr;
     CALL_DYN(rewindState, cpu, mmu, gbDebug);
     setPausedState(false, programState, cpu);
     if (mmu->hasRTC) {
         syncRTCTime(&mmu->rtc, mmu->cartRAMPlatformState.rtcFileMap);
     }
+    do {
+       machineStep(cpu, mmu, gbDebug, programState->soundState.volume);
+       gbDebug->hitBreakpoint = nullptr;
+    } while (cpu->cyclesSinceLastInstruction != 0);
 }
 static i32 disassembleInstructionAtAddress(u16 startAddress, MMU *mmu, char *outDisassembledInstruction, size_t maxLen) {
 #define OP(nBPI, str, ...) snprintf(outDisassembledInstruction, maxLen, str, ##__VA_ARGS__);\
@@ -135,7 +142,14 @@ static i32 disassembleInstructionAtAddress(u16 startAddress, MMU *mmu, char *out
         } break;
 
         case 0x0F: OP(1, "RRCA"); break;
-        case 0x10: OP(2, "STOP 0"); break;
+        case 0x10:  {
+            if (NEXTB() == 0) {
+                OP(2, "STOP 0");
+            }
+            else {
+                OP(1, "Illegal");
+            }
+        } break;  
         case 0x17: OP(1, "RLA");  break;
         case 0x18: OP(2, "JR %d", (i8)NEXTB()); break;
         case 0x1F: OP(1, "RRA"); break;
@@ -662,7 +676,7 @@ static void drawBreakpointWindow(GameBoyDebug *gbDebug, TimeUS dt) {
             if (indexOfHWBreakpointType > 0) {
                 ImGui::Text("Value:");
                 ImGui::SameLine();
-                ImGui::InputText("##expectedvalue", inputExpectedValue, 3, ImGuiInputTextFlags_CharsHexadecimal);
+                ImGui::InputText("##expectedvalue_hwbp", inputExpectedValue, 3, ImGuiInputTextFlags_CharsHexadecimal);
             }
 
             ImGui::SameLine();
@@ -773,7 +787,7 @@ static void drawBreakpointWindow(GameBoyDebug *gbDebug, TimeUS dt) {
             if (indexOfRegisterBreakpointType > 0) {
                 ImGui::Text("Value:");
                 ImGui::SameLine();
-                ImGui::InputText("##expectedvalue", inputExpectedValue, 3, ImGuiInputTextFlags_CharsHexadecimal);
+                ImGui::InputText("##expectedvalue_regbp", inputExpectedValue, 3, ImGuiInputTextFlags_CharsHexadecimal);
             }
 
             ImGui::SameLine();
@@ -1018,6 +1032,12 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             //ImGui::Text("In BIOS: %s", BOOL_TO_STR(mmu->inBios));
             ImGui::Text("Clock speed: %f cyles", cpu->cylesExecutedThisFrame / (dt/ 1000000.));
             ImGui::Text("Total Cycles: %" PRId64, cpu->totalCycles);
+            ImGui::Text("Custom cycle counter: %" PRId64, cpu->totalCycles - 
+                        gbDebug->customCycleCounterStart);
+            ImGui::SameLine();
+            if (ImGui::Button("Reset")) {
+                gbDebug->customCycleCounterStart = cpu->totalCycles;
+            }
         }
 
         if (ImGui::CollapsingHeader("Timer/Divider")) {
@@ -1060,6 +1080,73 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             ImGui::Text("Total frame count %llu", gbDebug->totalFrameCount); 
             ImGui::Text("Mode: %s", lcdModeStr);
             ImGui::Text("Mode clock: %d", mmu->lcd.modeClock);
+            {
+                i32 totalModeClocks;
+                i32 scanlineClocks = 0;
+                switch (mmu->lcd.mode) {
+                case LCDMode::HBlank: {
+                   totalModeClocks = HBLANK_DURATION; 
+                   scanlineClocks += SCAN_OAM_DURATION + SCAN_VRAM_AND_OAM_DURATION;
+                } break;
+                case LCDMode::ScanOAM: {
+                    totalModeClocks = SCAN_OAM_DURATION;
+                } break;
+                case LCDMode::ScanVRAMAndOAM: {
+                    totalModeClocks = SCAN_VRAM_AND_OAM_DURATION;
+                    scanlineClocks += SCAN_OAM_DURATION;
+                } break;
+                case LCDMode::VBlank: {
+                    totalModeClocks = VBLANK_DURATION*(MAX_LY - mmu->lcd.ly + 1);
+                } break;
+                
+                }
+                i32 cyclesLeftInMode = totalModeClocks - mmu->lcd.modeClock;
+                scanlineClocks += mmu->lcd.modeClock;
+                if (mmu->lcd.isEnabled) {
+                    ImGui::Text("Cycles until next LCD mode: %d", cyclesLeftInMode);
+                }
+                else {
+                    ImGui::Text("Cycles until next LCD mode: %d (disabled)", cyclesLeftInMode);
+                }
+                
+                
+                ImGui::Text("Scanline clock: %d", scanlineClocks);
+                
+                //TOOD: print cycles until VBlank interrupt
+                i32 cyclesTilVBlank;
+                switch (mmu->lcd.mode) {
+                case LCDMode::HBlank: {
+                    cyclesTilVBlank =
+                            cyclesLeftInMode + 
+                            ((SCAN_OAM_DURATION+SCAN_VRAM_AND_OAM_DURATION+HBLANK_DURATION)*(SCREEN_HEIGHT - mmu->lcd.ly - 1));
+                } break;
+                case LCDMode::ScanVRAMAndOAM: {
+                    cyclesTilVBlank =
+                            cyclesLeftInMode + 
+                            HBLANK_DURATION +
+                            ((HBLANK_DURATION+SCAN_OAM_DURATION+SCAN_VRAM_AND_OAM_DURATION)*(SCREEN_HEIGHT - mmu->lcd.ly - 1));
+                } break;
+                case LCDMode::ScanOAM: {
+                    cyclesTilVBlank =
+                            cyclesLeftInMode + 
+                            SCAN_VRAM_AND_OAM_DURATION +
+                            HBLANK_DURATION +
+                            ((HBLANK_DURATION+SCAN_OAM_DURATION+SCAN_VRAM_AND_OAM_DURATION)*(SCREEN_HEIGHT - mmu->lcd.ly - 1));
+                } break;
+                case LCDMode::VBlank: {
+                    cyclesTilVBlank = 0;
+                } break;
+                }
+                
+                if (mmu->lcd.isEnabled) {
+                    ImGui::Text("Cycles until VBlank: %d", cyclesTilVBlank);
+                }
+                else {
+                    ImGui::Text("Cycles until VBlank: %d (disabled)", cyclesTilVBlank);
+                }
+                
+                //TODO: print cycles until LCD interrupt
+            }
             ImGui::Text("scx: %u scy: %u", mmu->lcd.scx, mmu->lcd.scy);
             ImGui::Text("wx: %u wy: %u", mmu->lcd.wx, mmu->lcd.wy);
             ImGui::Text("ly: %u lyc: %u", mmu->lcd.ly, mmu->lcd.lyc);
@@ -1186,20 +1273,20 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             }
             if (cpu->isPaused) {
                 if (ImGui::Button("Step Cycle")) {
-                    step(cpu, mmu, gbDebug, programState->soundState.volume);
+                    machineStep(cpu, mmu, gbDebug, programState->soundState.volume);
                     gbDebug->shouldRefreshDisassembler = true;
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Step Instruction")) {
                     do {
-                        step(cpu, mmu, gbDebug, programState->soundState.volume);
+                        machineStep(cpu, mmu, gbDebug, programState->soundState.volume);
                     } while (cpu->cyclesSinceLastInstruction != 0);
                     gbDebug->shouldRefreshDisassembler = true;
                 }
                 if (ImGui::Button("Step Frame")) {
                     i64 previousFrameCount = gbDebug->totalFrameCount;
                     do {
-                        step(cpu, mmu, gbDebug, programState->soundState.volume);
+                        machineStep(cpu, mmu, gbDebug, programState->soundState.volume);
                     } while (previousFrameCount >= gbDebug->totalFrameCount);
                     gbDebug->shouldRefreshDisassembler = true;
                 }
@@ -1441,7 +1528,7 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             if (buf_len(oamRefs) > 0) {
                 ImGuiListClipper clipper((int)buf_len(oamRefs), ImGui::GetTextLineHeightWithSpacing());
                 fori ((i64)buf_len(oamRefs)) {
-                    ImGui::Text("OAM Addr: %zX, X: %u, Y: %u, Tile Ref: %d, Flags: %X", (size_t)i + 0xFE00, oam[i+1], oam[i], oam[i+2], oam[i+3]);
+                    ImGui::Text("OAM Addr: %zX, X: %u, Y: %u, Tile Ref: %d, Flags: %X", (size_t)i + 0xFE00, oam[(i*4)+1], oam[i*4], oam[(i*4)+2], oam[(i*4)+3]);
                     ImGui::SameLine();
                     ImGui::Image(gbDebug->tiles[oamRefs[i]].textureID, ImVec2(TILE_WIDTH * DEFAULT_SCREEN_SCALE, TILE_HEIGHT * DEFAULT_SCREEN_SCALE));
                 }
@@ -1543,9 +1630,11 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             ImGui::Text("Go to: ");
             ImGui::SameLine();
             char addrInput[5] = {};
+            bool wentToPC = false;
             if (ImGui::InputText("##disassembler_goto", addrInput, ARRAY_LEN(addrInput),
                                  ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
 
+                wentToPC = true;
                 u16 address;
                 if (sscanf(addrInput, "%hX", &address) == 1) {
                     ImGui::BeginChild("##disassembly_scrolling");
@@ -1563,9 +1652,11 @@ void drawDebugger(GameBoyDebug *gbDebug, MMU *mmu, CPU *cpu, ProgramState *progr
             }
             ImGui::Text("Search: ");
             ImGui::SameLine();
-            bool goToNext = 
-                    ImGui::InputText("##disassembler_search", gbDebug->disassemblerSearchString, ARRAY_LEN(gbDebug->disassemblerSearchString),
-                                     ImGuiInputTextFlags_EnterReturnsTrue);                 
+            bool goToNext = ImGui::InputText("##disassembler_search", gbDebug->disassemblerSearchString, ARRAY_LEN(gbDebug->disassemblerSearchString),
+                                     ImGuiInputTextFlags_EnterReturnsTrue);
+            if (!wentToPC && gbDebug->disassemblerSearchString[0] != '\0' && ImGui::IsWindowFocused()) {
+               goToNext |= ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+            }
             ImGui::SameLine();
             goToNext |= ImGui::Button("Next##disassembler");
             ImGui::SameLine();   

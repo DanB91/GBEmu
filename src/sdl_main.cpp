@@ -211,8 +211,8 @@ GBEmuCode loadGBEmuCode(const char *gbemuCodePath) {
     ret.rewindState = (RewindStateFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "rewindState");
     CO_ASSERT(ret.rewindState);
     
-    ret.step = (StepFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "step");
-    CO_ASSERT(ret.step);
+    ret.machineStep = (StepFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "machineStep");
+    CO_ASSERT(ret.machineStep);
     
     ret.readByte = (ReadByteFn*) SDL_LoadFunction(ret.gbEmuCodeHandle, "readByte");
     CO_ASSERT(ret.readByte);
@@ -990,6 +990,8 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
             ALERT("This file is not a valid Game Boy ROM file. File is too small.");
             return;
         }
+        
+        bool shouldContinue = false;
 		{
 			u8 computedChecksum = 0;
 			for (int i = 0x134; i <= 0x14C; i++) {
@@ -1003,9 +1005,12 @@ mainLoop(SDL_Window *window, SDL_Renderer *renderer, PlatformState *platformStat
                 if (!isYesPressed) {
                    return; 
                 }
+                else {
+                    shouldContinue = true;
+                }
 			}
 		}
-		{
+		if (!shouldContinue) {
 			u16 computedChecksum = 0;
             u16 globalChecksum = (u16)((mmu->romData[0x14E] << 8) | mmu->romData[0x14F]);
 			for (int i = 0; i < mmu->romSize ; i++) {

@@ -1,4 +1,8 @@
 Bugs/Optimization:
+    - Next/prev doesn't center back to already found text in disassembly
+    - Deleting VRAM breakpoint doesn't uncheck the VRAM breakpoint boxes
+    - Fix X and Y on OAM viewer
+    - Fix X, Y mouse display for current scale and offset
     - Swap old and new input pointers instead of copying (Profile first)
     - Resizable window
     

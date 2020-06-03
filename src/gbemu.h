@@ -92,6 +92,13 @@ enum class BankingMode : i32 {
     Mode1 = 1  //32kbyte ram; 512kb ROM
 };
 
+#define MAX_LY 153
+#define TOTAL_SCANLINE_DURATION 456
+#define HBLANK_DURATION 204
+#define VBLANK_DURATION 456
+#define SCAN_OAM_DURATION 80
+#define SCAN_VRAM_AND_OAM_DURATION 172
+#define CYCLES_PER_STEP 4
 enum class LCDMode : i32 {
     HBlank = 0,
     VBlank = 1, 
@@ -184,8 +191,6 @@ struct Sprite {
 
         u8 flags;
     };
-    
-    bool isLowPriority;
 };
 struct LCD {
     PaletteColor backgroundPalette[PALETTE_LEN];
@@ -203,6 +208,8 @@ struct LCD {
     bool isWindowEnabled;
     bool isEnabled;
     bool isOAMEnabled;
+//    int isLCDInterruptRequested;
+    int isVBlankInterruptRequested;
 
     u8 scx; //scroll x
     u8 scy; //scroll y
@@ -471,10 +478,10 @@ struct CPU {
     bool isPreparingToInterrupt;
     i32 cyclesSinceLastInstruction;
     i32 cyclesInstructionWillTake;
-    i32 branchCyclesInstructionWillTake;
     i64 totalCycles;  //total cycles since game has been loaded
     i32 leftOverCyclesFromPreviousFrame; 
     i32 cylesExecutedThisFrame;
+    bool willEnableInterrupts;
     bool enableInterrupts; 
     bool isHalted;
     bool isPaused;
@@ -578,7 +585,7 @@ struct GBEmuCode {
     ResetFn *reset;
     SetPlatformContextFn *setPlatformContext;
     RewindStateFn *rewindState;
-    StepFn *step;
+    StepFn *machineStep;
     ReadByteFn *readByte;
     ReadWordFn *readWord;
     DrawDebuggerFn *drawDebugger;
@@ -643,7 +650,7 @@ extern "C" {
 #endif
 u8 readByte(u16 address, MMU *mmu);
 u16 readWord(u16 address, MMU *mmu);
-void step(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume);
+void machineStep(CPU *cpu, MMU* mmu, GameBoyDebug *gbDebug, int volume);
 bool rewindState(CPU *cpu, MMU *mmu, GameBoyDebug *gbDebug);
 #if CO_DEBUG
 }

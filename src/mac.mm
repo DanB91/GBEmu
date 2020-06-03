@@ -103,6 +103,7 @@ DebuggerPlatformContext *initDebugger(GameBoyDebug *gbDebug,ProgramState *progra
     ret->renderer = renderer;
 
     CAMetalLayer *layer = (__bridge CAMetalLayer*)SDL_RenderGetMetalLayer(renderer);
+    layer.allowsNextDrawableTimeout = NO;
 
     ret->commandQueue = [layer.device newCommandQueue];
     programState->guiContext = ImGui::CreateContext();
@@ -170,6 +171,7 @@ bool setFullScreen(SDL_Window *window, bool isFullScreen) {
 
 void newDebuggerFrame(DebuggerPlatformContext *platformContext) {
     // Start the Dear ImGui frame
+    @autoreleasepool {
     CAMetalLayer *layer = (__bridge CAMetalLayer*)SDL_RenderGetMetalLayer(platformContext->renderer);
     id<CAMetalDrawable> drawable = [layer nextDrawable];
 
@@ -184,9 +186,12 @@ void newDebuggerFrame(DebuggerPlatformContext *platformContext) {
     platformContext->currentDrawable = drawable;
 
     ImGui::NewFrame();
+    }
 }
 
 static void renderDebugger(DebuggerPlatformContext *platformContext) {
+    @autoreleasepool {
+        
     auto gbDebug = platformContext->gbDebug;
     constexpr MTLRegion region = {
         { 0, 0, 0 },                   // MTLOrigin
@@ -234,6 +239,7 @@ static void renderDebugger(DebuggerPlatformContext *platformContext) {
 
     [commandBuffer presentDrawable: platformContext->currentDrawable];
     [commandBuffer commit];
+    }
 }
 
 void closeDebugger(DebuggerPlatformContext *debuggerContext) {
@@ -264,6 +270,7 @@ void signalRenderDebugger(DebuggerPlatformContext *platformContext) {
 PlatformState *initPlatformState(SDL_Renderer *renderer, int windowW, int windowH) {
     NSError *error;
     CAMetalLayer *layer = (__bridge CAMetalLayer*)SDL_RenderGetMetalLayer(renderer);
+    layer.allowsNextDrawableTimeout = NO;
     id<MTLDevice> device = layer.device;
     id<MTLLibrary> library = [device newDefaultLibrary];
     if (!library) {
